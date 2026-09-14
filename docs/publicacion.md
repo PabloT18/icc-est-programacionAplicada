@@ -4,6 +4,7 @@
 
 Este paquete es el contenido completo del repositorio propuesto. La conexión disponible durante la elaboración no ofrecía creación de repositorios nuevos, por lo que no se creó un remoto ni se subieron archivos a la cuenta.
 
+
 Crea `icc-pap-material` vacío en tu cuenta de GitHub. Desde esta carpeta:
 
 ```bash
