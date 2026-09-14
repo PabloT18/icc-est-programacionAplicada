@@ -1,0 +1,8 @@
+.gradle/
+build/
+out/
+*.class
+.env
+application-local.yaml
+.idea/
+.DS_Store

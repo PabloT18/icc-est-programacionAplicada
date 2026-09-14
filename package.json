@@ -1,0 +1,14 @@
+{
+  "name": "icc-pap-material",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Material de Programación Aplicada · UPS",
+  "scripts": {
+    "build:site": "node scripts/build-site.mjs",
+    "check:links": "node scripts/check-links.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,141 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>2.4 · Preprocesamiento y extracción de ficheros · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../2.3-aserciones/index.html">Anterior</a><a href="../../03/3.1-fundamentos/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>2.4. Preprocesamiento y extracción de ficheros</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 2. Expresiones regulares<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>CampusMonitor recibirá un archivo de tramas. Un error en una línea no debería borrar las lecturas válidas de las demás. Se necesita una importación por flujo, un resumen reproducible y un registro de rechazos con su ubicación.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../2.3-aserciones/index.html">2.3</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Lectura incremental y codificación</h3>
+<p>Files.newBufferedReader permite procesar un fichero sin cargarlo completo en una lista. Especifica UTF-8 para que el resultado no dependa de la plataforma. El recurso se cierra con try-with-resources incluso cuando una excepción interrumpe el proceso.</p>
+<p>readLine elimina el terminador de línea, pero no elimina espacios del contenido. Normalizar con strip puede cambiar el protocolo si los espacios son significativos. En este formato las líneas vacías se ignoran y las restantes se procesan exactamente como están. La demostración es local y para archivos controlados. Para ficheros no confiables se necesita además un lector con límite antes de acumular una línea completa, no solo revisar su longitud después.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Reconocimiento, conversión y modelo</h3>
+<p>El proceso se divide en etapas: reconocer campos, convertir números, validar dominio y crear un objeto. La expresión regular debe compilarse una sola vez. Cada línea utiliza su propio Matcher. Un error se representa con número de línea, causa y fragmento de entrada, evitando registrar datos sensibles si el formato los contuviera.</p>
+<p>Los archivos CSV generales permiten comillas, delimitadores escapados y saltos dentro de campos. Este ejemplo utiliza un protocolo delimitado simple y no pretende ser un parser CSV completo. Cuando el formato lo requiera, debe utilizarse una biblioteca que implemente su gramática.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Resumen y trazabilidad</h3>
+<p>Un resumen útil muestra líneas procesadas, aceptadas, rechazadas y cantidad de registros por sensor. LinkedHashMap conserva el orden de aparición. El número de línea vincula un rechazo con el archivo original y permite repetir el diagnóstico. Las entradas duplicadas necesitan una política explícita: aceptar, rechazar o resolver por una clave.</p>
+<p>No confundas el número de líneas físicas con el número de registros válidos. Los comentarios y blancos pueden contarse por separado. En una importación persistente, el resumen tampoco garantiza que la base de datos haya confirmado los cambios. Esa confirmación se resolverá mediante transacciones en la unidad 4.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Rendimiento y límites</h3>
+<p>La lectura por flujo limita el consumo de memoria, pero un mapa de todos los sensores puede crecer con la cardinalidad del archivo. Define tamaño máximo de línea y archivo según el caso. Limita las muestras de errores conservadas en memoria y envía el detalle a un fichero si el volumen aumenta.</p>
+<p>Una regex con cuantificadores ambiguos puede volver lenta una línea cuidadosamente construida. Prefiere gramáticas acotadas y separadores claros. La PC medirá resultados funcionales sobre un conjunto determinista. No afirmará mejoras de rendimiento a partir de una sola ejecución ni mezclará resultados de archivos diferentes.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>CampusMonitor recibirá un archivo de tramas. Un error en una línea no debería borrar las lecturas válidas de las demás. Se necesita una importación por flujo, un resumen reproducible y un registro de rechazos con su ubicación.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/FicherosDemo.java">FicherosDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u02;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import java.util.regex.*;
+public class FicherosDemo {
+    static final Pattern P = Pattern.compile(&quot;(S[0-9]{2});(-?[0-9]+(?:[.][0-9]+)?);C&quot;);
+    public static void main(String[] args) throws IOException {
+        Path archivo = args.length == 0 ? Files.createTempFile(&quot;tramas-&quot;, &quot;.txt&quot;) : Path.of(args[0]);
+        boolean temporal = args.length == 0;
+        if (temporal) Files.writeString(archivo,&quot;S01;23.5;C\nmal\nS01;24.0;C\nS02;-2;C\n&quot;);
+        Map&lt;String,Integer&gt; conteo = new LinkedHashMap&lt;&gt;();
+        int linea = 0, validas = 0, invalidas = 0;
+        try (BufferedReader lector = Files.newBufferedReader(archivo, StandardCharsets.UTF_8)) {
+            String texto;
+            while ((texto = lector.readLine()) != null) {
+                linea++;
+                if (texto.isBlank()) continue;
+                Matcher m = P.matcher(texto);
+                if (texto.length() &lt;= 80 &amp;&amp; m.matches() &amp;&amp; Double.isFinite(Double.parseDouble(m.group(2)))) {
+                    conteo.merge(m.group(1),1,Integer::sum); validas++;
+                } else { invalidas++; System.out.println(&quot;Rechazada línea &quot; + linea); }
+            }
+        } finally { if (temporal) Files.deleteIfExists(archivo); }
+        System.out.println(&quot;Aceptadas=&quot; + validas + &quot;, rechazadas=&quot; + invalidas);
+        System.out.println(conteo);
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 02/2.4-textos-ficheros/ejemplos/FicherosDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=2.4
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Rechazada línea 2
+Aceptadas=3, rechazadas=1
+{S01=2, S02=1}
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC2.4 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Añade importar <ruta> al proyecto. Reutiliza el parser de 2.2, acepta tramas de sensores registrados y conserva número de línea para rechazos.</li>
+<li>Genera un resumen con registros por sensor y promedio por unidad compatible. Guarda errores en un fichero UTF-8 separado.</li>
+<li>Prueba un archivo con 12 líneas que incluya blancos, formato inválido, sensor inexistente y valores válidos. Justifica cada total y registra el commit.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Archivo con válidas y errores</td>
+<td>Continúa y reporta ambas cantidades</td>
+</tr>
+<tr>
+<td>Ruta inexistente</td>
+<td>Error de E/S descriptivo</td>
+</tr>
+<tr>
+<td>Dos importaciones del mismo archivo</td>
+<td>Política de duplicados documentada</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC2.4.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc2.4): preprocesamiento-y-extraccion-de-ficheros&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>La lectura por flujo evita cargar todo el archivo.</li>
+<li>Reconocer el formato no garantiza un valor válido.</li>
+<li>Cada rechazo conserva su número de línea y motivo.</li>
+<li>El tamaño de entrada y el costo del patrón necesitan límites.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/regex/Pattern.html">Pattern, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/regex/Matcher.html">Matcher, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/Files.html">Files, Java 25</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../2.3-aserciones/index.html">Anterior</a><a href="../../03/3.1-fundamentos/index.html">Siguiente</a></nav></main></body></html>

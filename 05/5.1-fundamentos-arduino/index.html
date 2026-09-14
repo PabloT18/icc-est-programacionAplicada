@@ -1,0 +1,127 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>5.1 · Fundamentos de Arduino · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../04/4.4-aplicacion-jdbc/index.html">Anterior</a><a href="../5.2-pines-entrada-salida/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>5.1. Fundamentos de Arduino</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 5. Interfaz de comunicación<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>CampusMonitor recibirá mediciones de un dispositivo físico. Arduino ejecuta un programa en un microcontrolador y Java ejecuta la aplicación del PC. La comunicación permite integrar ambos programas, pero sus tipos, recursos y ciclos de ejecución son diferentes.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../../04/4.4-aplicacion-jdbc/index.html">4.4</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><img src="assets/analogia.png" alt="Analogía visual de Fundamentos de Arduino"></p>
+<p>La ilustración sirve como analogía. El contrato técnico se define en el texto y el código.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. IDE, placa y estructura del sketch</h3>
+<p>Arduino IDE permite editar, compilar y cargar un sketch. Debes seleccionar la placa y el puerto correctos e instalar el soporte correspondiente. Un sketch utiliza C++ con el entorno Arduino. setup se ejecuta una vez al arrancar y loop se repite mientras el dispositivo está activo.</p>
+<p>La referencia del curso es Arduino UNO R3, basada en ATmega328P. Sus límites no deben extrapolarse a todas las placas Arduino. Una UNO R4 y una ESP32 tienen arquitecturas diferentes. La aplicación Java no se carga en la UNO: corre en el PC y se comunica con el sketch por el puerto serial.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Tipos, variables y operadores</h3>
+<p>En UNO R3, int tiene 16 bits y long 32 bits. Para tamaños explícitos utiliza uint16_t y uint32_t cuando corresponda. bool representa condiciones. Los operadores aritméticos y lógicos se parecen a Java, pero los tamaños, conversiones y manejo de memoria siguen reglas de C++.</p>
+<p>Una división entre enteros descarta la fracción. Para calcular porcentajes, multiplica en un tipo suficientemente amplio antes de dividir. Constantes constexpr o const expresan valores que no deben cambiar. Evita construir cadenas dinámicas repetidamente en dispositivos con memoria limitada. Un buffer de caracteres acotado ofrece un uso más predecible.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Funciones y ciclo no bloqueante</h3>
+<p>Las funciones separan adquisición, transformación y salida. Un prototipo declara tipos de parámetros y retorno. El ejemplo calcula un porcentaje a partir de la lectura ADC y lo imprime como dato de diagnóstico.</p>
+<p>millis devuelve milisegundos desde el inicio y su contador se desborda aproximadamente cada 49.7 días en plataformas con unsigned long de 32 bits. La comparación ahora - anterior &gt;= periodo, realizada con aritmética sin signo, funciona a través del desbordamiento para intervalos apropiados. No compares ahora &gt;= anterior + periodo porque esa suma puede desbordarse y alterar la condición.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Pines y límites eléctricos</h3>
+<p>Los pines digitales leen o generan niveles lógicos. Las entradas analógicas convierten una tensión en una cuenta ADC. Una cuenta no es automáticamente una temperatura ni una tensión calibrada. Se necesita conocer referencia, resolución y característica del sensor.</p>
+<p>Antes de conectar, identifica la placa exacta, alimentación y límites de corriente en su documentación. No conectes cargas de potencia directamente a un pin. En este curso se utiliza inicialmente un potenciómetro de 10 kΩ entre 5 V y GND con cursor a A0 en UNO R3, y el LED incorporado para salida. Desconecta la alimentación al cambiar el montaje.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>CampusMonitor recibirá mediciones de un dispositivo físico. Arduino ejecuta un programa en un microcontrolador y Java ejecuta la aplicación del PC. La comunicación permite integrar ambos programas, pero sus tipos, recursos y ciclos de ejecución son diferentes.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/Fundamentos.ino">Fundamentos.ino</a>.</p>
+<pre><code class="language-cpp">#include &lt;Arduino.h&gt;
+constexpr uint8_t PIN_SENSOR = A0;
+constexpr unsigned long PERIODO_MS = 500;
+unsigned long anterior = 0;
+uint16_t porcentaje(uint16_t raw) {
+  return static_cast&lt;uint16_t&gt;((static_cast&lt;uint32_t&gt;(raw) * 100U) / 1023U);
+}
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_BUILTIN, OUTPUT);
+}
+void loop() {
+  unsigned long ahora = millis();
+  if (ahora - anterior &gt;= PERIODO_MS) {
+    anterior = ahora;
+    uint16_t raw = analogRead(PIN_SENSOR);
+    Serial.print(&quot;RAW=&quot;); Serial.print(raw);
+    Serial.print(&quot;;PCT=&quot;); Serial.println(porcentaje(raw));
+    digitalWrite(LED_BUILTIN, raw &gt; 512 ? HIGH : LOW);
+  }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Abre el sketch en Arduino IDE. Si el IDE solicita una carpeta con el mismo nombre, acepta crearla. Selecciona <strong>Arduino UNO</strong>, el puerto del dispositivo y carga el programa. Abre el monitor serial a <strong>115200</strong>. El montaje y las pruebas se detallan en la PC y en la guía de hardware.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Cada 500 ms imprime RAW y PCT. El valor depende de la posición del potenciómetro; el LED se enciende cuando RAW &gt; 512.
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC5.1 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Crea firmware/campus_monitor/campus_monitor.ino en el repositorio personal. Selecciona UNO R3, puerto y velocidad serial.</li>
+<li>Lee A0 cada 500 ms sin delay y convierte las cuentas a un porcentaje entero mediante una función. No lo presentes como temperatura.</li>
+<li>Registra placa, montaje, captura del monitor serial y tres posiciones del potenciómetro. Explica el tamaño de los tipos utilizados.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Cursor cerca de GND</td>
+<td>Cuenta cercana a 0</td>
+</tr>
+<tr>
+<td>Cursor cerca de 5 V</td>
+<td>Cuenta cercana a 1023 en UNO R3</td>
+</tr>
+<tr>
+<td>Ejecución continua</td>
+<td>Muestreo periódico sin delay</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC5.1.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias firmware
+git commit -m &quot;feat(pc5.1): fundamentos-de-arduino&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>El sketch ejecuta setup y loop.</li>
+<li>Los tamaños de tipos dependen de la placa.</li>
+<li>millis permite planificar sin bloquear.</li>
+<li>Los pines tienen límites de tensión y corriente.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.arduino.cc/language-reference/">Arduino Language Reference</a></li>
+<li><a href="https://docs.arduino.cc/hardware/uno-rev3/">Arduino UNO R3</a></li>
+<li><a href="https://fazecast.github.io/jSerialComm/">jSerialComm</a></li>
+<li><a href="https://docs.espressif.com/projects/arduino-esp32/en/latest/api/adc.html">ESP32 Arduino ADC</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../04/4.4-aplicacion-jdbc/index.html">Anterior</a><a href="../5.2-pines-entrada-salida/index.html">Siguiente</a></nav></main></body></html>

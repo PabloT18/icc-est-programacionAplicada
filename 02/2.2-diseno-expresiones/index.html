@@ -1,0 +1,137 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>2.2 · Diseño de expresiones regulares · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../2.1-lenguajes-regulares/index.html">Anterior</a><a href="../2.3-aserciones/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>2.2. Diseño de expresiones regulares</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 2. Expresiones regulares<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>Las entradas ya tienen identificadores definidos. La siguiente versión de CampusMonitor debe extraer campos de una línea, convertir un valor decimal y registrar errores útiles sin mezclar reconocimiento con persistencia.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../2.1-lenguajes-regulares/index.html">2.1</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Clases, cuantificadores y agrupación</h3>
+<p>Las clases de caracteres delimitan símbolos admitidos. [0-9] acepta un dígito y [A-Z] una letra mayúscula ASCII. Los cuantificadores ?, *, + y {m,n} controlan repetición. Los paréntesis capturan grupos y (?:...) agrupa sin capturar. Usa grupos con nombre para campos semánticos: sensor, valor y unidad son más mantenibles que posiciones numéricas dispersas.</p>
+<p>Diseña desde ejemplos positivos y negativos. Un decimal del protocolo puede admitir un signo menos opcional, una parte entera y una fracción opcional con punto. Esa gramática no acepta coma decimal, exponente o NaN. La decisión debe estar en el contrato del protocolo, no depender de la configuración regional del equipo.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Dos niveles de escape</h3>
+<p>El texto de un literal Java se interpreta antes de que Pattern procese la expresión regular. Para expresar el metacarácter de dígito \d en un literal se escribe &quot;\d&quot;. Para un punto literal puede usarse &quot;\.&quot; o la clase &quot;[.]&quot;. La demostración utiliza [.] para hacer explícito que el separador decimal es un punto.</p>
+<p>Pattern.quote convierte texto externo en un literal del patrón. Matcher.quoteReplacement protege texto externo utilizado como reemplazo, porque $ y la barra inversa tienen significado especial allí. Son funciones diferentes y no intercambiables. Evita concatenar directamente un nombre ingresado por el usuario en una expresión.</p>
+<pre><code class="language-java">Pattern literal = Pattern.compile(Pattern.quote(&quot;sensor.a&quot;));
+String seguro = Matcher.quoteReplacement(&quot;$5&quot;);
+</code></pre>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Pattern, Matcher y flags</h3>
+<p>Pattern representa la expresión compilada y puede reutilizarse. Matcher contiene estado de una búsqueda sobre una entrada. Crea un Matcher por operación y no lo compartas entre hilos. Compilar el mismo patrón dentro de un bucle añade trabajo evitable.</p>
+<p>CASE_INSENSITIVE modifica la comparación de letras, MULTILINE cambia el comportamiento de ^ y $ respecto de las líneas y DOTALL permite que el punto coincida con saltos de línea. Ninguno de esos flags debe activarse por costumbre. Para protocolos de una línea, el diseño más claro suele rechazar saltos y utilizar matches sobre una línea ya delimitada.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Conversión y errores del dominio</h3>
+<p>Una captura sigue siendo texto. Double.parseDouble transforma el valor y puede lanzar NumberFormatException. Incluso una cadena numérica muy larga puede producir infinito, por lo que se comprueba Double.isFinite. Después se validan rangos físicos y unidades.</p>
+<p>La demostración devuelve un record y usa IllegalArgumentException para comunicar una trama inválida. En un importador de lotes, estos errores deben registrarse por línea en lugar de abortar todos los datos. No escondas el error convirtiéndolo a cero: cero puede ser una medida real y produciría un registro incorrecto.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>Las entradas ya tienen identificadores definidos. La siguiente versión de CampusMonitor debe extraer campos de una línea, convertir un valor decimal y registrar errores útiles sin mezclar reconocimiento con persistencia.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/RegexDemo.java">RegexDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u02;
+import java.util.regex.*;
+public class RegexDemo {
+    record Trama(String sensor, double valor, String unidad) {}
+    static final Pattern P = Pattern.compile(
+        &quot;(?&lt;sensor&gt;S[0-9]{2});(?&lt;valor&gt;-?[0-9]+(?:[.][0-9]+)?);(?&lt;unidad&gt;C|PCT)&quot;);
+    static Trama parsear(String linea) {
+        if (linea.length() &gt; 80) throw new IllegalArgumentException(&quot;Trama demasiado larga&quot;);
+        Matcher m = P.matcher(linea);
+        if (!m.matches()) throw new IllegalArgumentException(&quot;Formato inválido&quot;);
+        double valor = Double.parseDouble(m.group(&quot;valor&quot;));
+        if (!Double.isFinite(valor)) throw new IllegalArgumentException(&quot;Valor no finito&quot;);
+        return new Trama(m.group(&quot;sensor&quot;),valor,m.group(&quot;unidad&quot;));
+    }
+    public static void main(String[] args) {
+        for (String s : new String[]{&quot;S01;23.5;C&quot;,&quot;S02;-2;C&quot;,&quot;S1;22;C&quot;,&quot;S01;NaN;C&quot;}) {
+            try { System.out.println(parsear(s)); }
+            catch (IllegalArgumentException e) { System.out.println(s + &quot;: &quot; + e.getMessage()); }
+        }
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 02/2.2-diseno-expresiones/ejemplos/RegexDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=2.2
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Trama[sensor=S01, valor=23.5, unidad=C]
+Trama[sensor=S02, valor=-2.0, unidad=C]
+S1;22;C: Formato inválido
+S01;NaN;C: Formato inválido
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC2.2 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Adapta el parser a IDs T001 u O001 del catálogo y a una trama id;valor;unidad. Usa grupos con nombre.</li>
+<li>Limita la entrada a 80 caracteres y admite únicamente unidades C y PERSONAS. Comprueba que ocupación sea un entero no negativo.</li>
+<li>Integra un comando validar-trama que muestre cada campo o un error preciso. Conserva la cadena original en la evidencia de errores.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T001;23.5;C</td>
+<td>Temperatura válida</td>
+</tr>
+<tr>
+<td>O001;12;PERSONAS</td>
+<td>Ocupación válida</td>
+</tr>
+<tr>
+<td>O001;12.5;PERSONAS</td>
+<td>Formato numérico válido, regla de dominio rechazada</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC2.2.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc2.2): diseno-de-expresiones-regulares&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Los grupos con nombre identifican campos.</li>
+<li>El literal Java y el patrón tienen escapes distintos.</li>
+<li>Pattern se reutiliza; Matcher conserva el estado de búsqueda.</li>
+<li>La conversión numérica requiere validación posterior.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/regex/Pattern.html">Pattern, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/regex/Matcher.html">Matcher, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/Files.html">Files, Java 25</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../2.1-lenguajes-regulares/index.html">Anterior</a><a href="../2.3-aserciones/index.html">Siguiente</a></nav></main></body></html>

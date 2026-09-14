@@ -1,0 +1,131 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>4.3 · ResultSet, RowSet y consultas parametrizadas · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../4.2-persistencia/03-jdo/index.html">Anterior</a><a href="../4.4-aplicacion-jdbc/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>4.3. ResultSet, RowSet y consultas parametrizadas</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 4. Conexión a bases de datos<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>CampusMonitor debe consultar lecturas por sensor y mostrar resultados cuando la conexión ya se cerró. ResultSet y CachedRowSet ofrecen modelos de acceso diferentes y exigen decisiones sobre tamaño, tipos y duración de los recursos.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../4.2-persistencia/03-jdo/index.html">4.2c</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Cursor y lectura de columnas</h3>
+<p>ResultSet representa el resultado de una consulta y mantiene un cursor inicialmente antes de la primera fila. next avanza y devuelve false cuando no quedan filas. Acceder a columnas antes del primer next es un uso incorrecto. Usa nombres o alias claros para reducir errores al cambiar el SELECT.</p>
+<p>Los getters convierten tipos según JDBC y el controlador. getInt devuelve cero cuando la columna SQL es NULL; para distinguirlo llama wasNull inmediatamente o usa getObject con un tipo compatible. Para importes usa BigDecimal y para valores temporales define la correspondencia explícita. No confundas un cero válido con ausencia de dato.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. PreparedStatement y parámetros</h3>
+<p>PreparedStatement separa estructura SQL y valores. Los marcadores ? representan valores que se asignan con setters tipados. No concatenes una entrada externa dentro del WHERE. Los parámetros no sirven para nombres de tabla, columnas ni direcciones ASC/DESC; esos elementos deben seleccionarse desde una lista permitida.</p>
+<p>executeQuery se utiliza cuando se espera un resultado tabular, y executeUpdate devuelve el número de filas afectadas por cambios. Revisa ese número: actualizar cero filas puede significar que el ID no existe. El driver puede preparar sentencias en el servidor según su configuración y frecuencia, por lo que no debes prometer una mejora automática en toda consulta.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. RowSet conectado y desconectado</h3>
+<p>RowSet extiende ResultSet con una API más apta para componentes. JdbcRowSet es conectado y conserva acceso a su conexión. CachedRowSet copia filas y puede utilizarse desconectado. RowSetProvider crea implementaciones estándar sin importar clases internas com.sun.rowset.</p>
+<p>CachedRowSet consume memoria proporcional a los datos copiados. No es un reemplazo adecuado para millones de filas. Sus capacidades de sincronización con la base requieren condiciones y resolución de conflictos; el ejemplo solo consulta y desconecta. Para una vista paginada, puede ser más simple mapear una página a una lista de DTOs.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Límite, orden y paginación</h3>
+<p>Una consulta que alimenta una pantalla debe limitar resultados y establecer un orden. Para paginar, el orden necesita un desempate estable como id. LIMIT y OFFSET son sencillos, pero pueden tener costos altos en páginas profundas y cambiar de contenido mientras se insertan datos. La paginación por clave ofrece otra opción.</p>
+<p>La demostración copia dos filas en un CachedRowSet y las recorre después de cerrar Connection. El objetivo es observar su desconexión, no recomendar guardar toda la base en memoria. La PC compara este enfoque con el mapeo explícito a records.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>CampusMonitor debe consultar lecturas por sensor y mostrar resultados cuando la conexión ya se cerró. ResultSet y CachedRowSet ofrecen modelos de acceso diferentes y exigen decisiones sobre tamaño, tipos y duración de los recursos.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/RowSetDemo.java">RowSetDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u04;
+import java.sql.*;
+import javax.sql.rowset.*;
+public class RowSetDemo {
+    public static void main(String[] args) throws SQLException {
+        try(CachedRowSet copia=RowSetProvider.newFactory().createCachedRowSet()) {
+            try(Connection c=DriverManager.getConnection(&quot;jdbc:h2:mem:filas&quot;)) {
+                try(Statement s=c.createStatement()) {
+                    s.execute(&quot;CREATE TABLE lectura(id INT PRIMARY KEY,sensor VARCHAR(8),valor DOUBLE PRECISION)&quot;);
+                    s.executeUpdate(&quot;INSERT INTO lectura VALUES(1,&#39;S01&#39;,22),(2,&#39;S01&#39;,24),(3,&#39;S02&#39;,30)&quot;);
+                }
+                try(PreparedStatement p=c.prepareStatement(&quot;SELECT id,valor FROM lectura WHERE sensor=? ORDER BY id&quot;)) {
+                    p.setString(1,&quot;S01&quot;);
+                    try(ResultSet r=p.executeQuery()){copia.populate(r);}
+                }
+            }
+            while(copia.next()) System.out.println(copia.getInt(&quot;id&quot;)+&quot;: &quot;+copia.getDouble(&quot;valor&quot;));
+            System.out.println(&quot;Filas desconectadas: &quot;+copia.size());
+        }
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=4.3
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">1: 22.0
+2: 24.0
+Filas desconectadas: 2
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC4.3 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Implementa una consulta de CampusMonitor por sensor y rango de valores con PreparedStatement. Los filtros son valores parametrizados.</li>
+<li>Mapea el resultado a List<LecturaDto> y crea otra consulta limitada con CachedRowSet para comparar el uso tras cerrar la conexión.</li>
+<li>Agrega paginación con orden por instante e ID. Prueba un ID con comillas como entrada y verifica que no modifica la consulta.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Filtro S01</td>
+<td>Solo lecturas de ese sensor</td>
+</tr>
+<tr>
+<td>ID con &#39; OR &#39;1&#39;=&#39;1</td>
+<td>Se trata como valor literal</td>
+</tr>
+<tr>
+<td>NULL numérico</td>
+<td>Se distingue de cero</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC4.3.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc4.3): resultset-rowset-y-consultas-parametrizadas&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>ResultSet se recorre con next.</li>
+<li>PreparedStatement parametriza valores.</li>
+<li>CachedRowSet permite lectura desconectada.</li>
+<li>La paginación necesita un orden estable.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.sql/java/sql/package-summary.html">JDBC, Java 25</a></li>
+<li><a href="https://jdbc.postgresql.org/documentation/">PostgreSQL JDBC</a></li>
+<li><a href="https://db.apache.org/jdo/">Apache JDO</a></li>
+<li><a href="https://www.datanucleus.org/products/accessplatform_6_0/jdo/guide.html">DataNucleus JDO</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../4.2-persistencia/03-jdo/index.html">Anterior</a><a href="../4.4-aplicacion-jdbc/index.html">Siguiente</a></nav></main></body></html>

@@ -1,0 +1,142 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>3.4 · Productores y consumidores · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../3.3-sincronizacion/02-barreras-semaforos-atomicas/index.html">Anterior</a><a href="../3.5-herramientas/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>3.4. Productores y consumidores</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 3. Programación concurrente<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>Un lector de archivos o un puerto serial produce lecturas a su propia velocidad. El procesamiento y almacenamiento consumen esas lecturas. Una cola separa ambos ritmos y obliga a decidir qué sucede cuando la producción supera la capacidad.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../3.3-sincronizacion/02-barreras-semaforos-atomicas/index.html">3.3b</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Cola acotada y contrapresión</h3>
+<p>BlockingQueue ofrece operaciones de espera coordinadas. put espera espacio y take espera un elemento. ArrayBlockingQueue tiene capacidad fija. Si la cola está llena, el productor se frena: esta contrapresión limita memoria y comunica indirectamente que el consumidor está saturado.</p>
+<p>Una cola ilimitada no elimina la saturación, solo la convierte en acumulación de memoria y latencia. Para un dispositivo que no pueda detener su emisión, necesitas una política de descarte o una señal de control. Debes medir cuántas lecturas se descartaron y distinguirlas de las procesadas. La capacidad se elige según volumen, tamaño de mensaje y tolerancia a demora.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. wait y notify como fundamento</h3>
+<p>Una implementación manual con monitores comprueba la condición dentro de un while, llama wait y vuelve a comprobar al despertar. El bucle es necesario porque pueden existir despertares espurios y porque otro hilo puede cambiar la condición antes de recuperar el monitor. notifyAll despierta candidatos, pero no garantiza qué hilo continúa primero.</p>
+<p>wait libera el monitor mientras espera y lo recupera antes de retornar. sleep no libera el monitor. Estas diferencias explican muchos bloqueos. Para código de aplicación, BlockingQueue evita reimplementar estas reglas y comunica el patrón de forma directa.</p>
+<pre><code class="language-java">synchronized (lock) {
+    while (cola.isEmpty()) lock.wait();
+    // Extraer bajo el mismo monitor y notificar cambios de condición.
+}
+</code></pre>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Señal de terminación y número de consumidores</h3>
+<p>Una señal de fin es un mensaje que los consumidores reconocen para salir. Si hay dos consumidores, una única señal puede dejar al otro esperando. La demostración envía una señal por consumidor después de los datos, con un solo productor y orden FIFO.</p>
+<p>Con varios productores, no debe emitirse fin hasta que todos hayan terminado. Puede utilizarse un coordinador o un contador de productores activos. La cancelación por error requiere una vía diferente del fin normal, porque un productor bloqueado en put podría no llegar a emitir las señales. Un ejecutor y cancelación coordinada simplifican ese escenario.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Orden y consistencia de resultados</h3>
+<p>Una cola FIFO conserva el orden de extracción, pero varios consumidores pueden finalizar en distinto orden. Si cada lectura tiene un número de secuencia, el sistema puede detectar faltantes y ordenar la presentación sin exigir ejecución secuencial de todo el proceso.</p>
+<p>La demostración comprueba cantidad y suma final, dos invariantes independientes del reparto de trabajo. No utiliza null como señal porque BlockingQueue no admite elementos nulos. El record Mensaje distingue un dato de una señal de fin de forma explícita.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>Un lector de archivos o un puerto serial produce lecturas a su propia velocidad. El procesamiento y almacenamiento consumen esas lecturas. Una cola separa ambos ritmos y obliga a decidir qué sucede cuando la producción supera la capacidad.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/ColaDemo.java">ColaDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u03;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+public class ColaDemo {
+    record Mensaje(int valor, boolean fin) {}
+    public static void main(String[] args) throws InterruptedException {
+        BlockingQueue&lt;Mensaje&gt; cola = new ArrayBlockingQueue&lt;&gt;(4);
+        AtomicInteger suma = new AtomicInteger(), cantidad = new AtomicInteger();
+        Runnable consumir = () -&gt; {
+            try {
+                while (true) {
+                    Mensaje m = cola.take();
+                    if (m.fin()) return;
+                    suma.addAndGet(m.valor()); cantidad.incrementAndGet();
+                }
+            } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        };
+        Thread a = new Thread(consumir), b = new Thread(consumir);
+        a.start(); b.start();
+        for (int i=1;i&lt;=10;i++) cola.put(new Mensaje(i,false));
+        cola.put(new Mensaje(0,true)); cola.put(new Mensaje(0,true));
+        a.join(); b.join();
+        System.out.println(&quot;Cantidad: &quot; + cantidad.get());
+        System.out.println(&quot;Suma: &quot; + suma.get());
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 03/3.4-productores-consumidores/ejemplos/ColaDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=3.4
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Cantidad: 10
+Suma: 55
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC3.4 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Conecta el importador de CampusMonitor a una ArrayBlockingQueue de capacidad 20. Dos consumidores validan y procesan mensajes con secuencia.</li>
+<li>Define terminación normal y cancelación por error. La aplicación debe terminar sin consumidores esperando indefinidamente.</li>
+<li>Genera cien entradas deterministas, registra aceptadas, rechazadas y descartadas, y comprueba que la suma de categorías corresponde al total producido.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>100 entradas y 2 consumidores</td>
+<td>Cada entrada clasificada una vez</td>
+</tr>
+<tr>
+<td>Cola llena</td>
+<td>Se aplica la política de contrapresión</td>
+</tr>
+<tr>
+<td>Cancelación durante espera</td>
+<td>Todos los participantes terminan</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC3.4.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc3.4): productores-y-consumidores&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Una cola acotada limita la acumulación.</li>
+<li>wait libera el monitor y debe comprobarse dentro de un while.</li>
+<li>Se requiere una señal de fin por consumidor.</li>
+<li>FIFO no garantiza el orden de finalización.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/package-summary.html">Concurrencia, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/Thread.html">Thread</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.desktop/javax/swing/SwingWorker.html">SwingWorker</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../3.3-sincronizacion/02-barreras-semaforos-atomicas/index.html">Anterior</a><a href="../3.5-herramientas/index.html">Siguiente</a></nav></main></body></html>

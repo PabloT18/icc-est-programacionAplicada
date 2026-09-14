@@ -1,0 +1,133 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>4.1 · Modelo relacional y SQL · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../03/3.6-interfaz-grafica/index.html">Anterior</a><a href="../4.2-persistencia/01-jdbc-configuracion/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>4.1. Modelo relacional y SQL</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 4. Conexión a bases de datos<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>El repositorio en memoria pierde su contenido al cerrar CampusMonitor. Una base relacional permite guardar sensores y lecturas con identidades, relaciones y restricciones que sobreviven a la ejecución.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../../03/3.6-interfaz-grafica/index.html">3.6</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><img src="assets/analogia.png" alt="Analogía visual de Modelo relacional y SQL"></p>
+<p>La ilustración sirve como analogía. El contrato técnico se define en el texto y el código.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Relaciones, filas y claves</h3>
+<p>Una tabla representa una relación con columnas tipadas y filas. La clave primaria identifica cada fila y no admite valores nulos. Una clave foránea exige que una referencia corresponda a una fila válida de otra tabla, según las reglas configuradas. En CampusMonitor, lectura.sensor_id referencia sensor.id.</p>
+<p>El modelo separa sensores de lecturas para no repetir ubicación y tipo del dispositivo en cada medición. Una clave técnica generada puede identificar la lectura, mientras sensor_id y secuencia pueden formar una restricción única del protocolo. Diseña la identidad según la semántica de duplicados, no solo porque el motor permita autoincremento.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Tipos y restricciones del dominio</h3>
+<p>Elige tipos que representen el dato y su precisión. INTEGER sirve para cantidades enteras, NUMERIC para decimales exactos y DOUBLE PRECISION para medidas aproximadas. TIMESTAMP WITH TIME ZONE representa un instante con semántica temporal según el motor. En Java, Instant u OffsetDateTime ayudan a evitar la ambigüedad de horarios locales.</p>
+<p>NOT NULL, UNIQUE, CHECK y FOREIGN KEY protegen invariantes incluso si otra aplicación escribe en la base. Una validación en Java ofrece mejores mensajes al usuario, pero no sustituye a la restricción persistente. Evita borrar un sensor con cascada sobre lecturas históricas sin decidir expresamente esa política.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Operaciones SQL y consultas relacionadas</h3>
+<p>INSERT crea filas, SELECT consulta, UPDATE modifica y DELETE elimina. WHERE restringe las filas afectadas y ORDER BY define el orden de los resultados. Sin ORDER BY no se garantiza un orden estable. JOIN reúne datos relacionados por una condición y no debe confundirse con copiar los datos físicamente.</p>
+<p>Las consultas agregadas como COUNT y AVG resumen grupos. GROUP BY determina las categorías del resumen. Un índice puede favorecer filtros o uniones, pero agrega costo a escrituras y almacenamiento. En la práctica inicial, consulta por sensor y orden temporal, observando primero la corrección del resultado antes de optimizar.</p>
+<pre><code class="language-sql">SELECT s.id, s.ubicacion, COUNT(l.id) AS cantidad
+FROM sensor s LEFT JOIN lectura l ON l.sensor_id = s.id
+GROUP BY s.id, s.ubicacion
+ORDER BY s.id;
+</code></pre>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Esquema reproducible y entorno</h3>
+<p>Un script de esquema versionado documenta cómo crear la base. Las migraciones posteriores deben conservar datos existentes y registrar su orden. No soluciones cada cambio eliminando la base completa. La demostración usa H2 en memoria para una ejecución aislada y reproducible. El proyecto del estudiante usará PostgreSQL mediante JDBC en los contenidos siguientes.</p>
+<p>Las diferencias entre motores importan: identidad, funciones, tipos temporales y sintaxis de retorno pueden variar. Los scripts de PostgreSQL se incluyen por separado. No se promete que una aplicación probada únicamente con H2 se comporte de forma idéntica en PostgreSQL.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>El repositorio en memoria pierde su contenido al cerrar CampusMonitor. Una base relacional permite guardar sensores y lecturas con identidades, relaciones y restricciones que sobreviven a la ejecución.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/RelacionalDemo.java">RelacionalDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u04;
+import java.sql.*;
+public class RelacionalDemo {
+    public static void main(String[] args) throws SQLException {
+        try (Connection c = DriverManager.getConnection(&quot;jdbc:h2:mem:modelo&quot;)) {
+            try (Statement s = c.createStatement()) {
+                s.execute(&quot;CREATE TABLE sensor(id VARCHAR(8) PRIMARY KEY, ubicacion VARCHAR(80) NOT NULL)&quot;);
+                s.execute(&quot;CREATE TABLE lectura(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, sensor_id VARCHAR(8) REFERENCES sensor(id), valor DOUBLE PRECISION NOT NULL)&quot;);
+                s.executeUpdate(&quot;INSERT INTO sensor VALUES(&#39;S01&#39;,&#39;Lab&#39;),(&#39;S02&#39;,&#39;Biblioteca&#39;)&quot;);
+                s.executeUpdate(&quot;INSERT INTO lectura(sensor_id,valor) VALUES(&#39;S01&#39;,22),(&#39;S01&#39;,24)&quot;);
+                try (ResultSet r=s.executeQuery(&quot;SELECT s.id,COUNT(l.id) cantidad FROM sensor s LEFT JOIN lectura l ON s.id=l.sensor_id GROUP BY s.id ORDER BY s.id&quot;)) {
+                    while(r.next()) System.out.println(r.getString(&quot;id&quot;)+&quot;: &quot;+r.getInt(&quot;cantidad&quot;));
+                }
+            }
+        }
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=4.1
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">S01: 2
+S02: 0
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC4.1 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Diseña sensor y lectura en PostgreSQL para CampusMonitor, con clave foránea, valores requeridos y unicidad de sensor más secuencia.</li>
+<li>Versiona schema.sql y seed.sql. Inserta dos sensores, varias lecturas y un sensor sin lecturas para comprobar LEFT JOIN.</li>
+<li>Escribe consultas de promedio por sensor y últimas lecturas ordenadas. Describe qué restricciones evitan datos inconsistentes.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Lectura de sensor existente</td>
+<td>Inserción válida</td>
+</tr>
+<tr>
+<td>Sensor inexistente</td>
+<td>Violación de clave foránea</td>
+</tr>
+<tr>
+<td>Sensor sin lecturas</td>
+<td>Aparece con cantidad cero en LEFT JOIN</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC4.1.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc4.1): modelo-relacional-y-sql&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Las claves identifican filas y relacionan las tablas.</li>
+<li>Las restricciones complementan la validación en Java.</li>
+<li>JOIN relaciona datos; ORDER BY define el orden.</li>
+<li>Un esquema versionado permite reconstruir el entorno.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.sql/java/sql/package-summary.html">JDBC, Java 25</a></li>
+<li><a href="https://jdbc.postgresql.org/documentation/">PostgreSQL JDBC</a></li>
+<li><a href="https://db.apache.org/jdo/">Apache JDO</a></li>
+<li><a href="https://www.datanucleus.org/products/accessplatform_6_0/jdo/guide.html">DataNucleus JDO</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../03/3.6-interfaz-grafica/index.html">Anterior</a><a href="../4.2-persistencia/01-jdbc-configuracion/index.html">Siguiente</a></nav></main></body></html>

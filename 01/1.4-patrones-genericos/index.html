@@ -1,0 +1,146 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>1.4 · Patrones con programación genérica · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../1.3-genericos-reflexion/index.html">Anterior</a><a href="../../02/2.1-lenguajes-regulares/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>1.4. Patrones con programación genérica</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 1. Programación genérica<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>El catálogo debe guardar sensores y lecturas sin duplicar operaciones. También necesita cambiar criterios de selección y fuentes de datos. Los patrones ayudan cuando corresponden a variaciones reales del sistema.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../1.3-genericos-reflexion/index.html">1.3</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Repository y contrato de identidad</h3>
+<p>Un Repository ofrece operaciones de colección sobre objetos del dominio y concentra decisiones de almacenamiento. Un contrato Repository&lt;ID,T&gt; separa el tipo de identificador del tipo de entidad. Definir guardar, buscar y listar obliga a decidir qué significa una identidad duplicada y qué ocurre si no hay coincidencia.</p>
+<p>En memoria, LinkedHashMap conserva el orden de inserción y simplifica búsquedas por clave. Devolver una copia de la colección evita que el cliente elimine elementos del repositorio sin pasar por sus operaciones. Esa copia es superficial: si las entidades son mutables, aún pueden alterarse. Los records ayudan a mantener datos de valor inmutables.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Strategy con interfaces funcionales</h3>
+<p>Strategy encapsula un comportamiento intercambiable. Comparator<T> ya cumple ese papel para ordenar, y Predicate<T> para seleccionar. No hace falta crear una jerarquía de clases cuando una interfaz funcional expresa toda la variación. En CampusMonitor, un criterio puede escoger sensores por ubicación y otro por estado.</p>
+<p>La estrategia no debería modificar silenciosamente la colección que recibe. Separa las consultas de las actualizaciones y conserva funciones pequeñas. Si la comparación depende de unidades, valida la compatibilidad antes de aplicar el criterio. El uso de genéricos garantiza tipos compatibles, no equivalencia de magnitudes.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Factory y dependencias explícitas</h3>
+<p>Una fábrica concentra cómo se construye un objeto. Supplier<T> permite inyectar la construcción sin reflexión. El consumidor solicita instancias a la fábrica y utiliza únicamente el contrato. Esto facilita cambiar una fuente simulada por una fuente serial en la unidad 5.</p>
+<p>Repository, Strategy y Factory se pueden combinar, pero no deben añadirse por obligación. Una clase genérica que necesita veinte parámetros o múltiples casts suele indicar responsabilidades mezcladas. Diseña primero el caso concreto y generaliza la parte repetida que mantiene el mismo comportamiento.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Evolución hacia persistencia</h3>
+<p>El repositorio en memoria desaparecerá al cerrar el programa. Más adelante, una implementación JDBC mantendrá el contrato de consulta, pero incorporará errores de E/S, transacciones y restricciones de base de datos. Esas diferencias no deben esconderse detrás de promesas falsas: guardar puede fallar y varias operaciones pueden requerir una unidad transaccional.</p>
+<p>La demostración ofrece un repositorio reutilizable sin capas innecesarias. La PL de esta unidad pide un catálogo autónomo con criterios intercambiables. No incluye base de datos, hilos ni hardware para que el diseño genérico pueda revisarse por separado.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>El catálogo debe guardar sensores y lecturas sin duplicar operaciones. También necesita cambiar criterios de selección y fuentes de datos. Los patrones ayudan cuando corresponden a variaciones reales del sistema.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/PatronesDemo.java">PatronesDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u01;
+import java.util.*;
+import java.util.function.*;
+public class PatronesDemo {
+    record Sensor(String id, String ubicacion) {}
+    interface Repositorio&lt;ID,T&gt; {
+        void guardar(T valor);
+        Optional&lt;T&gt; buscar(ID id);
+        List&lt;T&gt; listar();
+    }
+    static class Memoria&lt;ID,T&gt; implements Repositorio&lt;ID,T&gt; {
+        private final Map&lt;ID,T&gt; datos = new LinkedHashMap&lt;&gt;();
+        private final Function&lt;T,ID&gt; identidad;
+        Memoria(Function&lt;T,ID&gt; identidad) { this.identidad = identidad; }
+        public void guardar(T valor) {
+            Objects.requireNonNull(valor);
+            ID id = Objects.requireNonNull(identidad.apply(valor));
+            if (datos.putIfAbsent(id,valor) != null) throw new IllegalArgumentException(&quot;ID duplicado&quot;);
+        }
+        public Optional&lt;T&gt; buscar(ID id) { return Optional.ofNullable(datos.get(id)); }
+        public List&lt;T&gt; listar() { return List.copyOf(datos.values()); }
+    }
+    public static void main(String[] args) {
+        Repositorio&lt;String,Sensor&gt; repo = new Memoria&lt;&gt;(Sensor::id);
+        Supplier&lt;Sensor&gt; fabrica = () -&gt; new Sensor(&quot;S01&quot;,&quot;Lab&quot;);
+        repo.guardar(fabrica.get());
+        repo.guardar(new Sensor(&quot;S02&quot;,&quot;Biblioteca&quot;));
+        Predicate&lt;Sensor&gt; enLab = s -&gt; s.ubicacion().equals(&quot;Lab&quot;);
+        System.out.println(repo.listar().stream().filter(enLab).toList());
+        System.out.println(repo.buscar(&quot;S99&quot;));
+        try { repo.guardar(fabrica.get()); }
+        catch (IllegalArgumentException e) { System.out.println(e.getMessage()); }
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 01/1.4-patrones-genericos/ejemplos/PatronesDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=1.4
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">[Sensor[id=S01, ubicacion=Lab]]
+Optional.empty
+ID duplicado
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC1.4 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Integra Repositorio&lt;ID,T&gt; en CampusMonitor para Sensor y Lectura<Double>, con identidades explícitas y sin casts no comprobados.</li>
+<li>Agrega estrategias de consulta por ubicación y por umbral. El repositorio debe devolver listas que no permitan alterar su estructura interna.</li>
+<li>Registra fuentes con Supplier y conserva los comandos anteriores. Documenta dónde existe una variación que justifica cada patrón.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Insertar dos IDs distintos</td>
+<td>Ambos consultables</td>
+</tr>
+<tr>
+<td>Insertar ID existente</td>
+<td>Error controlado, sin reemplazo silencioso</td>
+</tr>
+<tr>
+<td>Buscar ID ausente</td>
+<td>Optional.empty</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC1.4.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc1.4): patrones-con-programacion-generica&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Repository separa acceso y almacenamiento.</li>
+<li>Strategy cambia un criterio sin duplicar el algoritmo.</li>
+<li>Factory centraliza la creación.</li>
+<li>Los patrones responden a variaciones concretas.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://dev.java/learn/generics/">Genéricos en Java</a></li>
+<li><a href="https://dev.java/learn/reflection/">Reflexión</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/index.html">API Java 25</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../1.3-genericos-reflexion/index.html">Anterior</a><a href="../../02/2.1-lenguajes-regulares/index.html">Siguiente</a></nav></main></body></html>

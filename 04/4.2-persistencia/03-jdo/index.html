@@ -1,0 +1,135 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>4.2c · Java Data Objects · Programación Aplicada</title><link rel="stylesheet" href="../../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../02-javabeans/index.html">Anterior</a><a href="../../4.3-resultset-rowset/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>4.2c. Java Data Objects</h2>
+<p><img src="../../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 4. Conexión a bases de datos<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>El programa analítico incluye Java Data Objects. Este contenido implementa una persistencia mínima con JDO para compararla con JDBC, manteniendo JDBC como ruta principal de CampusMonitor.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../02-javabeans/index.html">4.2b</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Estándar JDO y proveedor</h3>
+<p>JDO define una API de persistencia de objetos independiente de una implementación específica. PersistenceManagerFactory crea administradores y PersistenceManager trabaja con objetos persistentes dentro de un contexto. Una implementación como DataNucleus proporciona el comportamiento y el acceso al almacenamiento.</p>
+<p>JDO no es JDBC ni JPA. JDBC trabaja con sentencias SQL, filas y conexiones. JDO administra estados de objetos y puede apoyarse en distintos tipos de almacenamiento según el proveedor. La abstracción no elimina el diseño del esquema ni los costos de consultas, carga de relaciones y transacciones.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Metadatos, identidad y enhancement</h3>
+<p>Las clases persistentes necesitan metadatos que indiquen identidad y campos persistidos. @PersistenceCapable marca la clase y @PrimaryKey identifica su clave de aplicación en el ejemplo. El proveedor puede requerir enhancement de bytecode para seguir cambios y transiciones de estado.</p>
+<p>El subproyecto jdo-demo compila su pequeño modelo a bytecode Java 17 y ejecuta el enhancer de DataNucleus antes de arrancar con Java 25. Esa separación limita el modelo a una versión de bytecode compatible con el proveedor utilizado; no cambia el JDK base de CampusMonitor. El procedimiento está declarado en Gradle y debe repetirse cuando cambia la clase persistente.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Transacciones y ciclo de vida</h3>
+<p>La transacción comienza antes de makePersistent y confirma con commit. Si algo falla y sigue activa, se revierte con rollback. Después de cerrar PersistenceManager, algunos objetos pueden no permitir acceso a campos no cargados. Si el resultado debe salir del contexto, define una estrategia de separación o transformación a DTO.</p>
+<p>El ejemplo persiste una lectura, termina el primer administrador y abre otro para recuperarla por identidad. Así evita confundir la referencia original en memoria con una consulta al almacenamiento. Se utiliza una base H2 aislada para esta comparación y no se reemplaza el esquema PostgreSQL del proyecto principal.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Comparación de responsabilidades</h3>
+<p>Con JDBC escribes SQL y realizas el mapeo. Con JDO defines metadatos y trabajas con la API de objetos, aunque aún debes controlar transacciones y recursos. Un proveedor agrega dependencias, configuración y pasos de construcción. La elección depende del tipo de aplicación y de la experiencia del equipo.</p>
+<p>La PC debe demostrar persistencia y lectura posterior, identificar los archivos que requiere el proveedor y explicar qué parte reemplaza al mapeo manual. No basta con instanciar una clase anotada: sin proveedor, enhancement cuando corresponda y transacción confirmada, no hay persistencia demostrada.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>El programa analítico incluye Java Data Objects. Este contenido implementa una persistencia mínima con JDO para compararla con JDBC, manteniendo JDBC como ruta principal de CampusMonitor.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/JdoDemo.java">JdoDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.jdo;
+import javax.jdo.*;
+import java.util.*;
+public class JdoDemo {
+    public static void main(String[] args) {
+        Map&lt;String,String&gt; p = new HashMap&lt;&gt;();
+        p.put(&quot;javax.jdo.PersistenceManagerFactoryClass&quot;,&quot;org.datanucleus.api.jdo.JDOPersistenceManagerFactory&quot;);
+        p.put(&quot;javax.jdo.option.ConnectionDriverName&quot;,&quot;org.h2.Driver&quot;);
+        p.put(&quot;javax.jdo.option.ConnectionURL&quot;,&quot;jdbc:h2:mem:jdo;DB_CLOSE_DELAY=-1&quot;);
+        p.put(&quot;javax.jdo.option.ConnectionUserName&quot;,&quot;sa&quot;);
+        p.put(&quot;javax.jdo.option.ConnectionPassword&quot;,&quot;&quot;);
+        p.put(&quot;datanucleus.schema.autoCreateAll&quot;,&quot;true&quot;);
+        PersistenceManagerFactory pmf=JDOHelper.getPersistenceManagerFactory(p);
+        try {
+            PersistenceManager pm=pmf.getPersistenceManager();
+            Transaction tx=pm.currentTransaction();
+            try {tx.begin();pm.makePersistent(new JdoLectura(1,23.5));tx.commit();}
+            finally {if(tx.isActive())tx.rollback();pm.close();}
+            pm=pmf.getPersistenceManager();tx=pm.currentTransaction();
+            try {
+                tx.begin();
+                JdoLectura lectura=pm.getObjectById(JdoLectura.class,1L);
+                System.out.println(&quot;Lectura JDO: &quot;+lectura.getValor());tx.commit();
+            } finally {if(tx.isActive())tx.rollback();pm.close();}
+        } finally {pmf.close();}
+    }
+}
+</code></pre>
+<p><strong>Modelo persistente completo:</strong> <a href="ejemplos/JdoLectura.java">JdoLectura.java</a>. El subproyecto incluye API, proveedor y tarea de enhancement.</p>
+<h3>2.2. Ejecución</h3>
+<p>Desde <code>demostraciones</code>:</p>
+<pre><code class="language-bash">./gradlew :jdo-demo:run
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. La tarea de ejecución aplica primero el enhancement del modelo.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Lectura JDO: 23.5. El proveedor también puede escribir mensajes de inicialización en stderr.
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC4.2c · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Ejecuta jdo-demo y comprueba que el modelo recibe enhancement antes de la ejecución. Conserva el proyecto principal con JDBC.</li>
+<li>Añade unidad a JdoLectura y consulta una lectura desde un segundo PersistenceManager. Prueba rollback y demuestra que no queda la nueva identidad.</li>
+<li>Escribe una comparación con JDBC sobre mapeo, configuración, transacciones y dependencia del proveedor.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Persistir y abrir otro administrador</td>
+<td>Valor recuperado por identidad</td>
+</tr>
+<tr>
+<td>Rollback de nueva lectura</td>
+<td>Identidad no encontrada después</td>
+</tr>
+<tr>
+<td>Clase sin enhancement</td>
+<td>Identifica el error del proveedor y reconstruye</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC4.2c.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc4.2c): java-data-objects&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>JDO necesita una implementación de persistencia.</li>
+<li>Los metadatos y el enhancer preparan el modelo persistente.</li>
+<li>Las transacciones siguen siendo explícitas.</li>
+<li>JDO gestiona objetos; JDBC expone operaciones SQL.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.sql/java/sql/package-summary.html">JDBC, Java 25</a></li>
+<li><a href="https://jdbc.postgresql.org/documentation/">PostgreSQL JDBC</a></li>
+<li><a href="https://db.apache.org/jdo/">Apache JDO</a></li>
+<li><a href="https://www.datanucleus.org/products/accessplatform_6_0/jdo/guide.html">DataNucleus JDO</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../02-javabeans/index.html">Anterior</a><a href="../../4.3-resultset-rowset/index.html">Siguiente</a></nav></main></body></html>

@@ -1,0 +1,129 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>2.3 · Aserciones y límites de coincidencia · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../2.2-diseno-expresiones/index.html">Anterior</a><a href="../2.4-textos-ficheros/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>2.3. Aserciones y límites de coincidencia</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 2. Expresiones regulares<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>En los registros de diagnóstico aparecen etiquetas mezcladas con unidades y estados. A veces se necesita encontrar un valor únicamente si está acompañado por un contexto, sin incluir ese contexto en el resultado.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../2.2-diseno-expresiones/index.html">2.2</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Aserciones de longitud cero</h3>
+<p>Una aserción verifica una condición en una posición de la entrada y no consume caracteres. ^, $, límites de palabra y lookarounds pertenecen a esta familia. La coincidencia puede depender de símbolos anteriores o posteriores que no forman parte del texto capturado.</p>
+<p>Lookahead positivo (?=...) exige lo que sigue y el negativo (?!...) lo prohíbe. Lookbehind positivo (?&lt;=...) exige lo anterior y el negativo (?&lt;!...) lo prohíbe. Diseña primero la coincidencia que deseas devolver y luego las condiciones de contexto. Si una captura normal produce una solución más clara, no hace falta sustituirla por aserciones.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Anclas y límites de palabra</h3>
+<p>^ y $ pueden depender del modo multilínea, y $ admite ciertas posiciones antes de un terminador final. Para límites absolutos del texto, Java ofrece \A y \z. Con Matcher.matches normalmente no hace falta añadir anclas para exigir coincidencia total. El límite \b se relaciona con caracteres de palabra, no con cualquier separador visual.</p>
+<p>En protocolos definidos conviene escribir límites explícitos. Para extraer TEMP= seguido de un decimal y C, un lookbehind fijo reconoce la etiqueta y un lookahead comprueba la unidad. Rechaza coincidencias parciales dentro de tokens mayores. La elección de espacios permitidos debe estar documentada.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Composición sin ambigüedad</h3>
+<p>Varias aserciones al inicio pueden verificar condiciones independientes sobre una misma entrada. Esto se usa en validadores, pero una sucesión larga puede ser menos legible que varias comprobaciones de dominio. No uses una regex para comparar dos números ni para comprobar relaciones con una base de datos.</p>
+<p>Evita lookbehinds de longitud variable complejos aunque el motor acepte ciertas variantes. Los límites fijos facilitan explicar y probar el patrón. Los cuantificadores anidados y alternativas que reconocen el mismo prefijo pueden producir retroceso costoso. Los grupos atómicos y cuantificadores posesivos cambian la exploración y pueden alterar el conjunto de coincidencias, así que requieren pruebas específicas.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Pruebas del contexto</h3>
+<p>Las pruebas de una aserción deben variar tanto el fragmento buscado como su entorno. Mantén el mismo número y cambia la etiqueta, la unidad y los separadores. Así compruebas que el patrón verifica la condición y no acepta la cifra por accidente.</p>
+<p>Matcher.find avanza entre coincidencias y también maneja coincidencias vacías. En extracción de valores numéricos conviene que la parte consumida tenga al menos un carácter. El ejemplo extrae temperaturas solo tras TEMP= y antes de C seguida de espacio o final. No valida una línea completa: selecciona ocurrencias dentro de un texto.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>En los registros de diagnóstico aparecen etiquetas mezcladas con unidades y estados. A veces se necesita encontrar un valor únicamente si está acompañado por un contexto, sin incluir ese contexto en el resultado.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/AsercionesDemo.java">AsercionesDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u02;
+import java.util.regex.*;
+public class AsercionesDemo {
+    static final Pattern TEMP = Pattern.compile(
+        &quot;(?&lt;=TEMP=)-?[0-9]+(?:[.][0-9]+)?(?=C(?: |$))&quot;);
+    public static void main(String[] args) {
+        String texto = &quot;TEMP=23.5C HUM=40PCT TEMP=-2C TEMP=7F TEMP=8CX&quot;;
+        Matcher m = TEMP.matcher(texto);
+        int n = 0;
+        while (m.find()) {
+            double valor = Double.parseDouble(m.group());
+            System.out.println(valor + &quot; en [&quot; + m.start() + &quot;,&quot; + m.end() + &quot;)&quot;);
+            n++;
+        }
+        if (n != 2) throw new AssertionError(&quot;Se esperaban dos temperaturas&quot;);
+        System.out.println(&quot;Coincidencias: &quot; + n);
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 02/2.3-aserciones/ejemplos/AsercionesDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=2.3
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Extrae 23.5 y -2, con sus posiciones de inicio y fin. No extrae 7F ni 8CX.
+Coincidencias: 2
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC2.3 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Agrega al analizador de CampusMonitor una extracción de valores con etiqueta TEMP= y unidad C usando lookaround.</li>
+<li>Implementa otra extracción de IDs que no estén inmediatamente precedidos por DESCARTADO:. Mantén una lista de casos del contexto.</li>
+<li>Compara la solución con grupos de captura sin lookaround. Documenta cuál firma devuelve exactamente el texto deseado.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TEMP=23.5C</td>
+<td>Captura 23.5</td>
+</tr>
+<tr>
+<td>TEMP=23.5F o TEMP=23.5CX</td>
+<td>No captura</td>
+</tr>
+<tr>
+<td>DESCARTADO:T001</td>
+<td>ID excluido</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC2.3.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc2.3): aserciones-y-limites-de-coincidencia&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Las aserciones no consumen caracteres.</li>
+<li>Las anclas y los límites restringen dónde coincide el patrón.</li>
+<li>Lookahead y lookbehind comprueban el contexto de coincidencia.</li>
+<li>Las pruebas deben variar el entorno de la coincidencia.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/regex/Pattern.html">Pattern, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/regex/Matcher.html">Matcher, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/Files.html">Files, Java 25</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../2.2-diseno-expresiones/index.html">Anterior</a><a href="../2.4-textos-ficheros/index.html">Siguiente</a></nav></main></body></html>

@@ -1,0 +1,140 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>5.5 · Integración de Java, Arduino y persistencia · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../5.4-sensores/index.html">Anterior</a></nav><h1>Programación Aplicada</h1>
+<h2>5.5. Integración de Java, Arduino y persistencia</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 5. Interfaz de comunicación<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>CampusMonitor reúne ahora recepción serial, validación, procesamiento, persistencia y vista. El proyecto final debe coordinar fallos y cierre sin perder la distinción entre una muestra recibida y una muestra confirmada en la base.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../5.4-sensores/index.html">5.4</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Arquitectura de la integración</h3>
+<p>El adaptador serial produce bytes y el decodificador crea líneas. El parser genera mensajes tipados. Los mensajes DATA entran a una cola acotada y un consumidor transforma y almacena. ACK actualiza el estado de comandos pendientes. La vista recibe resúmenes o DTOs a través del EDT.</p>
+<p>Mantén dependencias hacia contratos: FuenteMensajes para hardware o simulación, RepositorioLecturas para persistencia y un servicio que coordine el ciclo de vida. No permitas que el parser acceda directamente a Swing ni que el lector serial mantenga una transacción abierta mientras espera nuevas muestras.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Identidad, duplicados y reinicios</h3>
+<p>Una secuencia de dispositivo ayuda a detectar pérdidas, pero vuelve a cero después de un reinicio. Define una sesión de captura con identidad propia y una clave única por sesión, sensor y secuencia. Así distingues un duplicado de una lectura válida en una nueva sesión.</p>
+<p>El consumidor confirma una lectura únicamente después del commit. Si se reintenta un lote, la clave de idempotencia permite reconocer lo ya guardado. No generes silenciosamente una nueva identidad en cada reintento porque producirías duplicados lógicos. Registra cuándo empieza y termina cada sesión.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Errores por etapa y cierre ordenado</h3>
+<p>Los errores de formato se registran y permiten continuar. Una desconexión detiene la producción y cambia el estado de la sesión. Un error de base puede requerir detener, reintentar con límite o mantener pendientes según la política definida. Una cola llena también necesita una decisión explícita.</p>
+<p>Para cierre normal, deja de producir, cierra el puerto, permite drenar la cola hasta un plazo, termina consumidores y cierra ejecutores y conexiones. Para una cancelación inmediata, informa cuántas lecturas quedaron sin confirmar. El cierre no debe bloquear el EDT mientras espera. La interfaz distingue conectado, capturando, cerrando y desconectado.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Simulación y verificación física</h3>
+<p>La demostración integra protocolo, cola y transacción con un conjunto de bytes simulado y H2. Permite comprobar el recorrido sin depender de una placa. La PL completa exige sustituir esa fuente por el puerto real y ejecutar contra PostgreSQL con el mismo contrato de mensajes.</p>
+<p>La simulación no prueba reinicio USB, niveles eléctricos, ruido, permisos del puerto ni cableado. La evidencia final debe incluir tramas reales, ACK de control, desconexión, reinicio de Java y consulta persistida. Si se usa una variante ESP32, se documentan las diferencias y se conserva el protocolo o se versiona expresamente.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>CampusMonitor reúne ahora recepción serial, validación, procesamiento, persistencia y vista. El proyecto final debe coordinar fallos y cierre sin perder la distinción entre una muestra recibida y una muestra confirmada en la base.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/IntegracionDemo.java">IntegracionDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u05;
+import edu.ups.pap.comun.Protocolo;
+import java.sql.*;
+import java.util.concurrent.*;
+public class IntegracionDemo {
+    public static void main(String[] args) throws Exception {
+        BlockingQueue&lt;Protocolo.Dato&gt; cola = new ArrayBlockingQueue&lt;&gt;(10);
+        for(String linea:new String[]{&quot;DATA;1;100&quot;,&quot;DATA;2;500&quot;,&quot;DATA;3;900&quot;}) {
+            var mensaje=Protocolo.parsear(linea);
+            if(mensaje instanceof Protocolo.Dato dato) cola.put(dato);
+        }
+        try(Connection c=DriverManager.getConnection(&quot;jdbc:h2:mem:integracion&quot;)) {
+            try(Statement s=c.createStatement()) {
+                s.execute(&quot;CREATE TABLE lectura(sesion VARCHAR(40),secuencia BIGINT,raw INT,PRIMARY KEY(sesion,secuencia))&quot;);
+            }
+            c.setAutoCommit(false);
+            try(PreparedStatement p=c.prepareStatement(&quot;INSERT INTO lectura VALUES(?,?,?)&quot;)) {
+                Protocolo.Dato d;
+                while((d=cola.poll())!=null) {
+                    p.setString(1,&quot;sesion-demo&quot;);p.setLong(2,d.secuencia());p.setInt(3,d.raw());p.addBatch();
+                }
+                p.executeBatch();c.commit();
+            } catch(SQLException e) {c.rollback();throw e;}
+            try(Statement s=c.createStatement();ResultSet r=s.executeQuery(&quot;SELECT COUNT(*),AVG(raw) FROM lectura&quot;)) {
+                r.next();System.out.println(&quot;Confirmadas: &quot;+r.getInt(1));
+                System.out.println(&quot;Promedio raw: &quot;+r.getDouble(2));
+            }
+        }
+    }
+}
+</code></pre>
+<p><strong>Dependencia compartida:</strong> <a href="../../demostraciones/src/main/java/edu/ups/pap/comun/Protocolo.java">Protocolo.java</a>. El archivo contiene la implementación completa y se compila junto con los ejemplos.</p>
+<h3>2.2. Ejecución</h3>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=5.5
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Confirmadas: 3
+Promedio raw: 500.0
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC5.5 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Integra captura real en CampusMonitor conservando el modo simulado. El consumidor JDBC debe usar una conexión propia y una sesión identificada.</li>
+<li>Muestra en Swing recibidas, rechazadas, confirmadas y pendientes. Añade LED con ACK y cierre ordenado de puerto, cola y tareas.</li>
+<li>Prueba una desconexión, un duplicado y un reinicio. La consulta PostgreSQL debe demostrar qué datos se confirmaron y a qué sesión pertenecen.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Tres tramas válidas</td>
+<td>Tres registros confirmados</td>
+</tr>
+<tr>
+<td>Misma sesión y secuencia</td>
+<td>Duplicado identificado</td>
+</tr>
+<tr>
+<td>Nueva sesión tras reinicio</td>
+<td>Secuencia reutilizable sin colisión lógica</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC5.5.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias firmware
+git commit -m &quot;feat(pc5.5): integracion-de-java-arduino-y-persistencia&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Cada etapa tiene una responsabilidad.</li>
+<li>La sesión diferencia reinicios y duplicados.</li>
+<li>Recibida y confirmada son estados distintos.</li>
+<li>La simulación y el hardware requieren evidencias diferentes.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.arduino.cc/language-reference/">Arduino Language Reference</a></li>
+<li><a href="https://docs.arduino.cc/hardware/uno-rev3/">Arduino UNO R3</a></li>
+<li><a href="https://fazecast.github.io/jSerialComm/">jSerialComm</a></li>
+<li><a href="https://docs.espressif.com/projects/arduino-esp32/en/latest/api/adc.html">ESP32 Arduino ADC</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../5.4-sensores/index.html">Anterior</a></nav></main></body></html>

@@ -1,0 +1,138 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>2.1 · Fundamentos de lenguajes regulares · Programación Aplicada</title><link rel="stylesheet" href="../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../01/1.4-patrones-genericos/index.html">Anterior</a><a href="../2.2-diseno-expresiones/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>2.1. Fundamentos de lenguajes regulares</h2>
+<p><img src="../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 2. Expresiones regulares<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>CampusMonitor recibirá líneas como S01;23.5. Antes de convertirlas a objetos necesitamos definir qué textos pertenecen al formato aceptado. Una expresión regular describe una estructura léxica y un autómata ayuda a explicar cómo se reconoce.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../../01/1.4-patrones-genericos/index.html">1.4</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><img src="assets/analogia.png" alt="Analogía visual de Fundamentos de lenguajes regulares"></p>
+<p>La ilustración sirve como analogía. El contrato técnico se define en el texto y el código.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Alfabeto, cadena y lenguaje</h3>
+<p>Un alfabeto es un conjunto de símbolos. Una cadena es una secuencia finita de esos símbolos, incluida la cadena vacía ε. Un lenguaje es un conjunto de cadenas sobre un alfabeto. Para identificadores de sensor, podemos definir S seguida de exactamente dos dígitos ASCII: S00 a S99.</p>
+<p>El patrón no explica aún qué sensor existe ni si está autorizado. Reconoce una forma. Después se valida el significado con reglas del dominio. Esta separación evita expresiones difíciles de mantener que intentan resolver relaciones de datos. En CampusMonitor, una trama puede tener un ID bien formado y aun así referirse a un sensor no registrado.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Operaciones regulares y autómatas</h3>
+<p>Las operaciones básicas son unión, concatenación y clausura de Kleene. Unión admite alternativas. Concatenación exige una secuencia. La estrella permite cero o más repeticiones. Los lenguajes regulares pueden reconocerse mediante autómatas finitos. Un autómata mantiene un estado que resume la parte relevante del prefijo leído.</p>
+<p>Para S y dos dígitos, q0 espera S, q1 espera el primer dígito, q2 el segundo y q3 acepta únicamente si terminó la entrada. Una transición inválida rechaza. El autómata no necesita recordar una cantidad ilimitada de símbolos. La demostración implementa esta lógica y la compara con Pattern, haciendo visible la equivalencia para este lenguaje.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Expresiones formales y motor de Java</h3>
+<p>La sintaxis de java.util.regex incorpora funciones adicionales a las expresiones regulares formales, como referencias a grupos previamente capturados. No todos los patrones admitidos por el motor describen lenguajes regulares en el sentido teórico. Por ejemplo, exigir la repetición exacta de una subcadena arbitraria puede necesitar memoria no acotada.</p>
+<p>Java utiliza un motor con retroceso. Una expresión ambigua puede explorar muchas alternativas antes de rechazar un texto. El hecho de que la sintaxis sea breve no garantiza buen rendimiento. En los siguientes temas se evitarán cuantificadores anidados ambiguos y se limitará el tamaño de las entradas externas.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Validación completa y pruebas negativas</h3>
+<p>Matcher.matches exige que toda la región de entrada coincida. Matcher.find busca una coincidencia dentro del texto. Para validar un identificador completo, matches expresa la intención. Usar find podría aceptar XXS01YY porque contiene una subcadena válida.</p>
+<p>Las pruebas deben incluir longitudes cercanas al límite, símbolos de otro alfabeto, prefijos, sufijos y cadena vacía. [0-9] limita los dígitos a ASCII de forma explícita. La categoría Unicode de dígitos tiene un alcance diferente y debe decidirse según el protocolo. La PC definirá primero el lenguaje y después la expresión.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>CampusMonitor recibirá líneas como S01;23.5. Antes de convertirlas a objetos necesitamos definir qué textos pertenecen al formato aceptado. Una expresión regular describe una estructura léxica y un autómata ayuda a explicar cómo se reconoce.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/LenguajeDemo.java">LenguajeDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u02;
+import java.util.regex.Pattern;
+public class LenguajeDemo {
+    static boolean automata(String texto) {
+        int estado = 0;
+        for (char c : texto.toCharArray()) {
+            if (estado == 0 &amp;&amp; c == &#39;S&#39;) estado = 1;
+            else if ((estado == 1 || estado == 2) &amp;&amp; c &gt;= &#39;0&#39; &amp;&amp; c &lt;= &#39;9&#39;) estado++;
+            else return false;
+        }
+        return estado == 3;
+    }
+    public static void main(String[] args) {
+        Pattern patron = Pattern.compile(&quot;S[0-9]{2}&quot;);
+        for (String s : new String[]{&quot;S01&quot;,&quot;S9&quot;,&quot;XS01&quot;,&quot;S001&quot;,&quot;S99&quot;,&quot;&quot;}) {
+            boolean manual = automata(s), regex = patron.matcher(s).matches();
+            if (manual != regex) throw new AssertionError(s);
+            System.out.println(&quot;&#39;&quot; + s + &quot;&#39; -&gt; &quot; + regex);
+        }
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 02/2.1-lenguajes-regulares/ejemplos/LenguajeDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=2.1
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">&#39;S01&#39; -&gt; true
+&#39;S9&#39; -&gt; false
+&#39;XS01&#39; -&gt; false
+&#39;S001&#39; -&gt; false
+&#39;S99&#39; -&gt; true
+&#39;&#39; -&gt; false
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC2.1 · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Especifica el lenguaje de identificadores de CampusMonitor: una letra T u O seguida de tres dígitos ASCII.</li>
+<li>Implementa un reconocedor por estados y otro con Pattern. Integra la validación antes de registrar sensores.</li>
+<li>Prueba al menos ocho cadenas que cubran aceptación, rechazo y límites. Explica por qué un ID válido puede no existir en el catálogo.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T001 y O999</td>
+<td>Aceptados</td>
+</tr>
+<tr>
+<td>T01, A001, XT001</td>
+<td>Rechazados</td>
+</tr>
+<tr>
+<td>T001 en catálogo vacío</td>
+<td>Formato válido, entidad ausente</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC2.1.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc2.1): fundamentos-de-lenguajes-regulares&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Un lenguaje es un conjunto de cadenas.</li>
+<li>Un autómata finito resume el prefijo en un estado.</li>
+<li>El motor Java incluye extensiones al formalismo regular.</li>
+<li>matches comprueba toda la entrada; el dominio valida su sentido.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/regex/Pattern.html">Pattern, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/regex/Matcher.html">Matcher, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/Files.html">Files, Java 25</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../01/1.4-patrones-genericos/index.html">Anterior</a><a href="../2.2-diseno-expresiones/index.html">Siguiente</a></nav></main></body></html>

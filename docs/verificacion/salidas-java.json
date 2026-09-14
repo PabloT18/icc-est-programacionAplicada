@@ -1,0 +1,158 @@
+[
+  {
+    "id": "1.1a",
+    "code": 0,
+    "out": "S01 / Laboratorio 1\nCapacidad: 30\ntrue\nValor nulo rechazado\n",
+    "err": ""
+  },
+  {
+    "id": "1.1b",
+    "code": 0,
+    "out": "Medicion[sensor=S02, valor=27.2]\nOptional.empty\nLaboratorio\n",
+    "err": ""
+  },
+  {
+    "id": "1.1c",
+    "code": 0,
+    "out": "24.0\nArgumentos de consola: 0\nOptionalDouble.empty\nElemento nulo\n",
+    "err": ""
+  },
+  {
+    "id": "1.2",
+    "code": 0,
+    "out": "[10, 12, 8, 22.5, 24.0]\nTotal numérico: 76.5\nElementos auditados: 5\n",
+    "err": ""
+  },
+  {
+    "id": "1.3",
+    "code": 0,
+    "out": "23.5 °C\njava.util.List<java.lang.Double>\ntrue\n",
+    "err": ""
+  },
+  {
+    "id": "1.4",
+    "code": 0,
+    "out": "[Sensor[id=S01, ubicacion=Lab]]\nOptional.empty\nID duplicado\n",
+    "err": ""
+  },
+  {
+    "id": "2.1",
+    "code": 0,
+    "out": "'S01' -> true\n'S9' -> false\n'XS01' -> false\n'S001' -> false\n'S99' -> true\n'' -> false\n",
+    "err": ""
+  },
+  {
+    "id": "2.2",
+    "code": 0,
+    "out": "Trama[sensor=S01, valor=23.5, unidad=C]\nTrama[sensor=S02, valor=-2.0, unidad=C]\nS1;22;C: Formato inválido\nS01;NaN;C: Formato inválido\n",
+    "err": ""
+  },
+  {
+    "id": "2.3",
+    "code": 0,
+    "out": "23.5 en [5,9)\n-2.0 en [26,28)\nCoincidencias: 2\n",
+    "err": ""
+  },
+  {
+    "id": "2.4",
+    "code": 0,
+    "out": "Rechazada línea 2\nAceptadas=3, rechazadas=1\n{S01=2, S02=1}\n",
+    "err": ""
+  },
+  {
+    "id": "3.1",
+    "code": 0,
+    "out": "Sin operación atómica: 1\nCon AtomicInteger: 2\n",
+    "err": ""
+  },
+  {
+    "id": "3.2a",
+    "code": 0,
+    "out": "NEW\nReceptor iniciado\nReceptor cerrado\nTERMINATED\n",
+    "err": ""
+  },
+  {
+    "id": "3.2b",
+    "code": 0,
+    "out": "Linux\n",
+    "err": ""
+  },
+  {
+    "id": "3.3a",
+    "code": 0,
+    "out": "Registros: 1\nInserciones exitosas: 1\n",
+    "err": ""
+  },
+  {
+    "id": "3.3b",
+    "code": 0,
+    "out": "Completas: 4\nPermisos: 2\n",
+    "err": ""
+  },
+  {
+    "id": "3.4",
+    "code": 0,
+    "out": "Cantidad: 10\nSuma: 55\n",
+    "err": ""
+  },
+  {
+    "id": "3.5",
+    "code": 0,
+    "out": "Media: 24.0\nSensor: S01\n",
+    "err": ""
+  },
+  {
+    "id": "3.6",
+    "code": 0,
+    "out": "Cálculo: 55\n",
+    "err": ""
+  },
+  {
+    "id": "4.1",
+    "code": 0,
+    "out": "S01: 2\nS02: 0\n",
+    "err": ""
+  },
+  {
+    "id": "4.2a",
+    "code": 0,
+    "out": "Motor: H2\nConexión: 1\n",
+    "err": ""
+  },
+  {
+    "id": "4.2b",
+    "code": 0,
+    "out": "id=S01\nubicacion=Lab\n",
+    "err": ""
+  },
+  {
+    "id": "4.3",
+    "code": 0,
+    "out": "1: 22.0\n2: 24.0\nFilas desconectadas: 2\n",
+    "err": ""
+  },
+  {
+    "id": "4.4",
+    "code": 0,
+    "out": "Lote revertido por clave duplicada\nFilas confirmadas: 0\n",
+    "err": ""
+  },
+  {
+    "id": "5.3",
+    "code": 0,
+    "out": "Dato[secuencia=1, raw=512]\nAck[encendido=true]\nRechazo: Formato de trama inválido\n",
+    "err": ""
+  },
+  {
+    "id": "5.4",
+    "code": 0,
+    "out": "raw=100 pct=0.0 media=0.0\nraw=300 pct=25.0 media=12.5\nraw=500 pct=50.0 media=25.0\nraw=700 pct=75.0 media=50.0\n",
+    "err": ""
+  },
+  {
+    "id": "5.5",
+    "code": 0,
+    "out": "Confirmadas: 3\nPromedio raw: 500.0\n",
+    "err": ""
+  }
+]

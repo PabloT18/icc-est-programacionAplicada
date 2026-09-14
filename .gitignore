@@ -1,0 +1,8 @@
+.gradle/
+**/.gradle/
+**/build/
+node_modules/
+*.class
+.env
+.DS_Store
+.idea/

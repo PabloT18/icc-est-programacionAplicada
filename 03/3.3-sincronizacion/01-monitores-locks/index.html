@@ -1,0 +1,144 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>3.3a · Sincronización con monitores y locks · Programación Aplicada</title><link rel="stylesheet" href="../../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../3.2-hilos-ejecutables/02-procesos-unix/index.html">Anterior</a><a href="../02-barreras-semaforos-atomicas/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>3.3a. Sincronización con monitores y locks</h2>
+<p><img src="../../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 3. Programación concurrente<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>Varias tareas pueden intentar registrar el mismo identificador o actualizar un resumen. Proteger operaciones individuales no basta si la regla requiere comprobar y modificar como una única operación.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../../3.2-hilos-ejecutables/02-procesos-unix/index.html">3.2b</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><img src="assets/meme.png" alt="Analogía visual de Sincronización con monitores y locks"></p>
+<p><strong>Pausa:</strong> «En una ejecución funcionó» no prueba ausencia de carreras. La comprobación requiere una invariante y un escenario reproducible.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Sección crítica e invariante</h3>
+<p>Una sección crítica agrupa operaciones que deben observarse de forma indivisible respecto de otros participantes. En una reserva de capacidad, comprobar disponible y descontar deben ejecutarse bajo la misma protección. Sin ello, dos tareas pueden aprobar la misma capacidad restante.</p>
+<p>Define primero la invariante, por ejemplo disponibles &gt;= 0 y reservas + disponibles = capacidadInicial. La protección debe cubrir todos los accesos que participan en ella, incluidas lecturas. Si una parte usa un lock y otra modifica el campo directamente, el protocolo queda incompleto. No expongas referencias mutables que permitan saltarse ese protocolo.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Métodos y bloques synchronized</h3>
+<p>synchronized utiliza el monitor del objeto indicado. Un método de instancia sincronizado usa this y un método static sincronizado usa el objeto Class. Dos instancias distintas poseen monitores distintos, aunque ejecuten el mismo método.</p>
+<p>Un bloque synchronized permite limitar el alcance y emplear un lock privado final. Al salir del monitor se publican escrituras hacia una adquisición posterior del mismo monitor. Los monitores son reentrantes: un hilo puede volver a entrar al monitor que ya posee. No bloquees sobre cadenas internadas u objetos públicos cuyo uso no controlas.</p>
+<pre><code class="language-java">synchronized (lock) {
+    if (disponibles == 0) return false;
+    disponibles--;
+    return true;
+}
+</code></pre>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. ReentrantLock y liberación garantizada</h3>
+<p>ReentrantLock ofrece operaciones como tryLock, adquisición con plazo o lockInterruptibly. unlock debe ir en finally después de una adquisición exitosa. Una excepción no debe dejar el recurso bloqueado. El lock no protege por su mera existencia: todos los participantes deben utilizarlo para el mismo estado.</p>
+<p>La equidad puede reducir algunos escenarios de espera desigual, pero no garantiza un rendimiento mayor. No mantengas un lock mientras realizas E/S lenta si puedes separar la preparación y la publicación de resultados. Cuanto más larga la sección crítica, más tareas esperan sin hacer trabajo útil.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Deadlock y orden de adquisición</h3>
+<p>Un deadlock puede aparecer cuando varias tareas esperan recursos retenidos por las demás. Un orden global de adquisición reduce ciclos: por ejemplo, ordenar las cuentas o sensores por ID y bloquear siempre en ese orden. Timeouts permiten detectar una espera prolongada, pero no reparan automáticamente un diseño inconsistente.</p>
+<p>La demostración protege un registro de IDs con un monitor. Dos tareas intentan insertar el mismo ID y exactamente una tiene éxito. La salida del ganador no es determinista. La invariante relevante es que el catálogo contiene un solo registro y el contador de éxitos vale uno.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>Varias tareas pueden intentar registrar el mismo identificador o actualizar un resumen. Proteger operaciones individuales no basta si la regla requiere comprobar y modificar como una única operación.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/MonitoresDemo.java">MonitoresDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u03;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+public class MonitoresDemo {
+    static final class Registro {
+        private final Object lock = new Object();
+        private final Set&lt;String&gt; ids = new HashSet&lt;&gt;();
+        boolean registrar(String id) {
+            synchronized (lock) {
+                if (ids.contains(id)) return false;
+                ids.add(id); return true;
+            }
+        }
+        int cantidad() { synchronized(lock) { return ids.size(); } }
+    }
+    public static void main(String[] args) throws InterruptedException {
+        Registro registro = new Registro();
+        AtomicInteger exitos = new AtomicInteger();
+        Runnable insertar = () -&gt; { if (registro.registrar(&quot;S01&quot;)) exitos.incrementAndGet(); };
+        Thread a = new Thread(insertar), b = new Thread(insertar);
+        a.start(); b.start(); a.join(); b.join();
+        System.out.println(&quot;Registros: &quot; + registro.cantidad());
+        System.out.println(&quot;Inserciones exitosas: &quot; + exitos.get());
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 03/3.3-sincronizacion/01-monitores-locks/ejemplos/MonitoresDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=3.3a
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Registros: 1
+Inserciones exitosas: 1
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC3.3a · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Protege el registro de sensores contra inserciones concurrentes del mismo ID. La comprobación y la inserción deben compartir sección crítica.</li>
+<li>Implementa una segunda versión con ReentrantLock y liberación en finally. Mantén la misma interfaz y casos de prueba.</li>
+<li>Ejecuta cien intentos sobre diez IDs. La cantidad final debe ser diez y ningún método debe exponer la estructura mutable interna.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>100 intentos sobre 10 IDs</td>
+<td>10 registros</td>
+</tr>
+<tr>
+<td>Excepción dentro de operación</td>
+<td>Lock liberado</td>
+</tr>
+<tr>
+<td>Consulta durante inserciones</td>
+<td>Estado consistente según contrato</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC3.3a.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc3.3a): sincronizacion-con-monitores-y-locks&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>La sección crítica protege una invariante.</li>
+<li>synchronized usa un monitor concreto.</li>
+<li>unlock debe ejecutarse en finally.</li>
+<li>Un orden de locks ayuda a prevenir deadlocks.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/package-summary.html">Concurrencia, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/Thread.html">Thread</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.desktop/javax/swing/SwingWorker.html">SwingWorker</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../3.2-hilos-ejecutables/02-procesos-unix/index.html">Anterior</a><a href="../02-barreras-semaforos-atomicas/index.html">Siguiente</a></nav></main></body></html>

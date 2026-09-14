@@ -1,0 +1,137 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>3.2a · Hilos, Runnable, estados e interrupción · Programación Aplicada</title><link rel="stylesheet" href="../../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../3.1-fundamentos/index.html">Anterior</a><a href="../02-procesos-unix/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>3.2a. Hilos, Runnable, estados e interrupción</h2>
+<p><img src="../../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 3. Programación concurrente<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>Una recepción simulada debe comenzar, producir lecturas y detenerse cuando el usuario lo solicite. Runnable define el trabajo y Thread controla una ejecución concreta de ese trabajo.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../../3.1-fundamentos/index.html">3.1</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Runnable y ciclo de vida</h3>
+<p>Runnable declara run() y no devuelve un resultado. Thread asocia una ejecución a una tarea. Llamar start inicia un nuevo hilo y provoca la ejecución de run en ese hilo. Llamar run directamente es una llamada ordinaria en el hilo actual. Un objeto Thread solo puede iniciarse una vez.</p>
+<p>Los estados de Thread.State son NEW, RUNNABLE, BLOCKED, WAITING, TIMED_WAITING y TERMINATED. RUNNABLE abarca ejecución o disponibilidad para ejecutarse, no garantiza uso de CPU en ese instante. BLOCKED se refiere a espera para entrar a un monitor synchronized. No todas las esperas de E/S o de locks se reflejan como BLOCKED.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Unión con join</h3>
+<p>join permite esperar a que otro hilo termine. Si retorna normalmente tras la terminación, las acciones del hilo terminado ocurren antes de las posteriores del hilo que hizo join. Esto permite leer sus resultados publicados siguiendo el contrato. Una unión con plazo puede retornar sin que el hilo haya terminado, por lo que se comprueba isAlive.</p>
+<p>No hagas join sobre una tarea larga dentro del hilo de interfaz. Esa espera bloquearía los eventos y repintados. La dependencia entre tareas debe estar clara: si A espera a B y B espera a A, ninguna terminará. Evita dependencias circulares de terminación.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Interrupción cooperativa</h3>
+<p>interrupt solicita interrupción. No detiene arbitrariamente el código ni deshace operaciones. Una tarea debe consultar su estado de interrupción o usar operaciones que respondan a ella. sleep, wait y join pueden lanzar InterruptedException. Al lanzarla, normalmente se limpia el estado de interrupción.</p>
+<p>Si un método no puede propagar la excepción, una respuesta habitual es restaurar el estado con Thread.currentThread().interrupt() y salir. No captures la excepción para continuar indefinidamente. No uses stop, suspend ni resume. Para E/S que no responde a interrupción, la cancelación puede requerir cerrar el recurso y diseñar un tiempo máximo de espera.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Coordinación sin esperar por azar</h3>
+<p>CountDownLatch permite señalar que una fase comenzó. En la demostración evita interrumpir antes de que la tarea haya comunicado su arranque. El orden de impresión de otros mensajes podría variar, pero se garantiza que el hilo termina antes del mensaje final.</p>
+<p>La cancelación debe liberar recursos en finally o try-with-resources. Piensa qué ocurre con una lectura a medio procesar: se descarta, se reintenta o se guarda como pendiente. El contador de lecturas no debería incrementarse antes de que la operación correspondiente concluya correctamente.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>Una recepción simulada debe comenzar, producir lecturas y detenerse cuando el usuario lo solicite. Runnable define el trabajo y Thread controla una ejecución concreta de ese trabajo.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/HilosDemo.java">HilosDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u03;
+import java.util.concurrent.CountDownLatch;
+public class HilosDemo {
+    public static void main(String[] args) throws InterruptedException {
+        CountDownLatch iniciado = new CountDownLatch(1);
+        Runnable recibir = () -&gt; {
+            try {
+                System.out.println(&quot;Receptor iniciado&quot;);
+                iniciado.countDown();
+                while (!Thread.currentThread().isInterrupted()) Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally { System.out.println(&quot;Receptor cerrado&quot;); }
+        };
+        Thread hilo = Thread.ofPlatform().name(&quot;receptor&quot;).unstarted(recibir);
+        System.out.println(hilo.getState());
+        hilo.start();
+        iniciado.await();
+        hilo.interrupt();
+        hilo.join(2000);
+        if (hilo.isAlive()) throw new IllegalStateException(&quot;No terminó a tiempo&quot;);
+        System.out.println(hilo.getState());
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 03/3.2-hilos-ejecutables/01-hilos-runnable/ejemplos/HilosDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=3.2a
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">NEW
+Receptor iniciado
+Receptor cerrado
+TERMINATED
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC3.2a · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Agrega un receptor simulado que produzca una lectura periódica hasta recibir una solicitud de cancelación. Separa Runnable del código de consola.</li>
+<li>Usa una señal de arranque y cancelación cooperativa. Espera su terminación con un plazo y comprueba que realmente finalizó.</li>
+<li>Conserva un conteo de lecturas completadas y documenta el comportamiento de una cancelación mientras la tarea espera.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Inicio y cancelación</td>
+<td>Termina y libera recursos</td>
+</tr>
+<tr>
+<td>Llamar run directamente</td>
+<td>Se ejecuta en el hilo llamador</td>
+</tr>
+<tr>
+<td>Segundo start en el mismo Thread</td>
+<td>Uso inválido del ciclo de vida</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC3.2a.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc3.2a): hilos-runnable-estados-e-interrupcion&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Runnable describe la tarea; start inicia otro hilo.</li>
+<li>join espera la terminación y hace visibles sus resultados.</li>
+<li>interrupt solicita una cancelación cooperativa.</li>
+<li>Una señal explícita coordina mejor que un sleep arbitrario.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/package-summary.html">Concurrencia, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/Thread.html">Thread</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.desktop/javax/swing/SwingWorker.html">SwingWorker</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../3.1-fundamentos/index.html">Anterior</a><a href="../02-procesos-unix/index.html">Siguiente</a></nav></main></body></html>

@@ -1,0 +1,124 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>4.2a · JDBC, Gradle y configuración YAML · Programación Aplicada</title><link rel="stylesheet" href="../../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../4.1-modelo-relacional/index.html">Anterior</a><a href="../02-javabeans/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>4.2a. JDBC, Gradle y configuración YAML</h2>
+<p><img src="../../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 4. Conexión a bases de datos<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>CampusMonitor debe sustituir datos en memoria por consultas a PostgreSQL. En este punto aparecen un controlador JDBC y una biblioteca de configuración, por lo que Gradle pasa a gestionar versiones y ejecución.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../../4.1-modelo-relacional/index.html">4.1</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. API JDBC y controlador</h3>
+<p>JDBC define interfaces estándar como Connection, PreparedStatement y ResultSet. El controlador implementa la comunicación con un motor concreto. El driver PostgreSQL se declara como dependencia de ejecución en Gradle. Los controladores JDBC modernos se registran mediante el mecanismo de servicios, por lo que normalmente no hace falta Class.forName.</p>
+<p>Una URL JDBC identifica el controlador y el destino. jdbc:postgresql://localhost:5432/campus describe motor, host, puerto y base. No es una URL web. Usuario, contraseña, conectividad, permisos y configuración TLS deben corresponder al servidor. Una URL correcta no garantiza acceso a una base existente.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Conexiones y cierre de recursos</h3>
+<p>Connection representa una sesión con el motor. Abrir y cerrar una conexión por cada registro puede ser costoso. Para esta introducción se utiliza una conexión por operación o lote, siempre con try-with-resources. Más adelante puede emplearse un pool, manteniendo el mismo principio de devolver la conexión al terminar.</p>
+<p>No compartas indiscriminadamente una Connection entre hilos. Su estado transaccional y sus operaciones pueden interferir. Connection, Statement y ResultSet tienen ciclos de vida relacionados. Cierra primero resultados y sentencias y después la conexión; la estructura anidada de try-with-resources hace visible ese orden.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Gradle Kotlin DSL y versiones fijas</h3>
+<p>build.gradle.kts declara plugins, repositorios, toolchain y dependencias. La toolchain fija Java 25 para compilar y ejecutar los ejemplos. El Gradle Wrapper permite usar la misma versión de Gradle en todos los equipos, sin depender de una instalación global después de generarlo.</p>
+<p>Las unidades iniciales pueden ejecutarse con java ruta/ClaseDemo.java porque solo utilizan el JDK. Desde esta unidad, el driver y YAML requieren un classpath gestionado. Las versiones están fijadas y se incluye un documento de versiones verificadas. No uses rangos latest ni actualices dependencias durante una entrega sin volver a comprobar compatibilidad.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. application.yaml y variables de entorno</h3>
+<p>Java SE no carga application.yaml automáticamente. La clase Config del proyecto lee ese recurso utilizando SnakeYAML Engine y extrae valores escalares. El programa combina configuración base con variables PAP_DB_URL, PAP_DB_USER y PAP_DB_PASSWORD. No se incluye la contraseña en el repositorio.</p>
+<p>El ejemplo verifica tipos y propiedades obligatorias y muestra el motor conectado sin imprimir secretos. Los límites del parser restringen alias y tamaño. No interpreta etiquetas para construir clases arbitrarias. El nombre application.yaml es una convención del proyecto, no implica que la aplicación use Spring Boot.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>CampusMonitor debe sustituir datos en memoria por consultas a PostgreSQL. En este punto aparecen un controlador JDBC y una biblioteca de configuración, por lo que Gradle pasa a gestionar versiones y ejecución.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/JdbcDemo.java">JdbcDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u04;
+import edu.ups.pap.comun.Config;
+import java.sql.*;
+public class JdbcDemo {
+    public static void main(String[] args) throws SQLException {
+        try (Connection c = Config.abrir()) {
+            DatabaseMetaData meta = c.getMetaData();
+            System.out.println(&quot;Motor: &quot; + meta.getDatabaseProductName());
+            try (PreparedStatement p = c.prepareStatement(&quot;SELECT 1 AS estado&quot;);
+                 ResultSet r = p.executeQuery()) {
+                if(r.next()) System.out.println(&quot;Conexión: &quot; + r.getInt(&quot;estado&quot;));
+            }
+        }
+    }
+}
+</code></pre>
+<p><strong>Dependencia compartida:</strong> <a href="../../../demostraciones/src/main/java/edu/ups/pap/comun/Config.java">Config.java</a>. El archivo contiene la implementación completa y se compila junto con los ejemplos.</p>
+<h3>2.2. Ejecución</h3>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=4.2a
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Con la configuración de demostración: Motor: H2 y Conexión: 1. Con PAP_DB_URL configurada a PostgreSQL muestra Motor: PostgreSQL.
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC4.2a · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Migra CampusMonitor a Gradle Kotlin DSL conservando los paquetes y PCs anteriores. Incorpora el Wrapper y fija Java 25.</li>
+<li>Implementa configuración YAML con sustitución explícita por variables de entorno y prueba una conexión PostgreSQL. No subas contraseñas.</li>
+<li>Agrega un comando diagnostico-bd que consulte metadatos y ejecute SELECT 1. Diferencia error de configuración y SQLException.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Configuración PostgreSQL válida</td>
+<td>SELECT 1 responde</td>
+</tr>
+<tr>
+<td>Contraseña incorrecta</td>
+<td>Error de autenticación sin revelar secreto</td>
+</tr>
+<tr>
+<td>application.yaml ausente</td>
+<td>Error claro de configuración</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC4.2a.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc4.2a): jdbc-gradle-y-configuracion-yaml&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>JDBC es la API; el driver se comunica con el motor.</li>
+<li>try-with-resources cierra los recursos incluso ante errores.</li>
+<li>Gradle administra el classpath y fija las dependencias.</li>
+<li>Java SE necesita código explícito para cargar YAML.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.sql/java/sql/package-summary.html">JDBC, Java 25</a></li>
+<li><a href="https://jdbc.postgresql.org/documentation/">PostgreSQL JDBC</a></li>
+<li><a href="https://db.apache.org/jdo/">Apache JDO</a></li>
+<li><a href="https://www.datanucleus.org/products/accessplatform_6_0/jdo/guide.html">DataNucleus JDO</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../../4.1-modelo-relacional/index.html">Anterior</a><a href="../02-javabeans/index.html">Siguiente</a></nav></main></body></html>

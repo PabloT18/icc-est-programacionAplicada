@@ -1,0 +1,136 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>3.2b · Procesos y ejecutables Unix · Programación Aplicada</title><link rel="stylesheet" href="../../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../01-hilos-runnable/index.html">Anterior</a><a href="../../3.3-sincronizacion/01-monitores-locks/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>3.2b. Procesos y ejecutables Unix</h2>
+<p><img src="../../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 3. Programación concurrente<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>El término ejecutable puede referirse a una tarea Runnable o a un programa del sistema operativo. Son conceptos distintos. Este complemento permite lanzar una herramienta de diagnóstico externa desde Java y controlar su salida y duración.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../01-hilos-runnable/index.html">3.2a</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Proceso, hilo y ejecutable</h3>
+<p>Un proceso dispone de recursos y espacio de direcciones gestionados por el sistema operativo. Un hilo pertenece a un proceso y comparte parte de su memoria con otros hilos del mismo proceso. Un ejecutable externo produce otro proceso; no se convierte en un Runnable por haber sido iniciado desde Java.</p>
+<p>ProcessBuilder construye una invocación con argumentos separados. Process permite observar terminación, código de salida y flujos. Runnable sigue siendo una interfaz Java para describir trabajo. En el programa analítico, hilos y ejecutables se trabaja principalmente como Thread y Runnable; esta extensión de procesos aclara el vocabulario y muestra una integración útil.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Argumentos y ausencia de shell implícito</h3>
+<p>new ProcessBuilder(&quot;uname&quot;, &quot;-s&quot;) pasa dos argumentos al sistema. No interpreta tuberías, comodines ni redirecciones como una shell. Esto reduce problemas de escape. Una cadena única &quot;uname -s&quot; intenta encontrar un programa con ese nombre y normalmente falla.</p>
+<p>No construyas sh -c con texto de usuarios. Si necesitas funciones de shell, utiliza un script controlado, revisa sus argumentos y limita las herramientas disponibles. La demostración usa únicamente el ejecutable uname y una opción fija. En Windows invoca el propio Java con --version para mantener una alternativa disponible.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Salida, errores y cierre</h3>
+<p>Un proceso tiene stdout, stderr y un código de salida. Si no se consumen sus flujos, puede bloquearse cuando se llenan los buffers. redirectErrorStream(true) combina stderr con stdout, pero pierde la distinción entre ambos canales. La demostración redirige a un archivo temporal para evitar el bloqueo de tuberías sin crear lectores adicionales.</p>
+<p>El código cero suele indicar éxito, según el contrato de la herramienta. Cualquier otro código debe tratarse explícitamente. No interpretes una salida parcial como un resultado válido cuando el proceso no terminó. Al finalizar, cierra flujos o elimina los ficheros temporales que hayas creado.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Plazos y portabilidad</h3>
+<p>waitFor con timeout limita la espera, no garantiza que el proceso termine al cumplirse el plazo. La aplicación debe solicitar destroy y, si no basta, destroyForcibly, esperando la terminación posterior. Los procesos hijos requieren una política adicional si una herramienta crea un árbol de procesos.</p>
+<p>Los comandos, rutas y permisos cambian entre plataformas. Para un diagnóstico reproducible registra el sistema operativo y la herramienta. No asumas que /dev/ttyUSB0 o uname existen en todos los equipos. La integración serial de la unidad 5 utilizará una biblioteca y selección explícita del puerto, en lugar de comandos de shell.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>El término ejecutable puede referirse a una tarea Runnable o a un programa del sistema operativo. Son conceptos distintos. Este complemento permite lanzar una herramienta de diagnóstico externa desde Java y controlar su salida y duración.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/ProcesosDemo.java">ProcesosDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u03;
+import java.io.*;
+import java.nio.file.*;
+import java.util.concurrent.TimeUnit;
+public class ProcesosDemo {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        boolean windows = System.getProperty(&quot;os.name&quot;).toLowerCase().contains(&quot;win&quot;);
+        String java = Path.of(System.getProperty(&quot;java.home&quot;),&quot;bin&quot;,windows?&quot;java.exe&quot;:&quot;java&quot;).toString();
+        ProcessBuilder pb = windows ? new ProcessBuilder(java,&quot;--version&quot;) : new ProcessBuilder(&quot;uname&quot;,&quot;-s&quot;);
+        Path salida = Files.createTempFile(&quot;diagnostico-&quot;, &quot;.txt&quot;);
+        Process proceso = null;
+        try {
+            proceso = pb.redirectErrorStream(true).redirectOutput(salida.toFile()).start();
+            if (!proceso.waitFor(3,TimeUnit.SECONDS)) {
+                proceso.destroy();
+                if (!proceso.waitFor(1,TimeUnit.SECONDS)) { proceso.destroyForcibly(); proceso.waitFor(); }
+                throw new IOException(&quot;Tiempo de diagnóstico agotado&quot;);
+            }
+            if (proceso.exitValue()!=0) throw new IOException(&quot;Código de salida: &quot;+proceso.exitValue());
+            System.out.print(Files.readString(salida));
+        } finally {
+            if (proceso!=null &amp;&amp; proceso.isAlive()) proceso.destroyForcibly();
+            Files.deleteIfExists(salida);
+        }
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 03/3.2-hilos-ejecutables/02-procesos-unix/ejemplos/ProcesosDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=3.2b
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Linux o Darwin en Unix/macOS. En Windows muestra la versión del JDK. La salida concreta depende del sistema operativo.
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC3.2b · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Agrega un diagnóstico opcional a CampusMonitor que ejecute una herramienta fija del sistema con argumentos separados.</li>
+<li>Aplica un plazo de tres segundos, captura código de salida y evita bloqueos por stdout y stderr.</li>
+<li>Documenta una alternativa portable y explica por qué ProcessBuilder no sustituye a Thread ni a ExecutorService.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Herramienta disponible</td>
+<td>Salida y código correctos</td>
+</tr>
+<tr>
+<td>Ejecutable inexistente</td>
+<td>IOException controlada</td>
+</tr>
+<tr>
+<td>Proceso que excede plazo</td>
+<td>Cancelación y limpieza</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC3.2b.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc3.2b): procesos-y-ejecutables-unix&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Un proceso tiene recursos del sistema operativo.</li>
+<li>ProcessBuilder recibe argumentos separados.</li>
+<li>Las salidas sin consumir pueden bloquear.</li>
+<li>Un timeout requiere una política de terminación.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/package-summary.html">Concurrencia, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/Thread.html">Thread</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.desktop/javax/swing/SwingWorker.html">SwingWorker</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../01-hilos-runnable/index.html">Anterior</a><a href="../../3.3-sincronizacion/01-monitores-locks/index.html">Siguiente</a></nav></main></body></html>

@@ -1,0 +1,137 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>3.3b · Barreras, semáforos y variables atómicas · Programación Aplicada</title><link rel="stylesheet" href="../../../assets/css/styles.css"></head><body><a class="skip" href="#contenido">Ir al material</a><main class="page" id="contenido"><nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../01-monitores-locks/index.html">Anterior</a><a href="../../3.4-productores-consumidores/index.html">Siguiente</a></nav><h1>Programación Aplicada</h1>
+<h2>3.3b. Barreras, semáforos y variables atómicas</h2>
+<p><img src="../../../assets/logos/ups-computacion.png" alt="UPS · Carrera de Computación"></p>
+<p><strong>Autor:</strong> Ing. Pablo Torres, Mgtr.<br><strong>Unidad:</strong> 3. Programación concurrente<br><strong>Proyecto de trabajo:</strong> CampusMonitor</p>
+<p><a href="../../../README.md">Inicio del curso</a> · <a href="presentacion.pptx">Presentación editable</a> · <a href="index.html">Ver en el navegador</a></p>
+<hr>
+<h2>1. Conceptos y ejemplos</h2>
+<h3>Contexto</h3>
+<p>No todas las coordinaciones consisten en bloquear un objeto. CampusMonitor puede limitar conexiones simultáneas, esperar una fase de calibración y contar lecturas completadas con mecanismos distintos.</p>
+<h3>Antes de empezar</h3>
+<p>Recupera el avance de <a href="../01-monitores-locks/index.html">3.3a</a>. Conserva sus comandos y evidencias. Revisa el ejemplo completo antes de implementar la PC. Las demostraciones del material se ejecutan separadas del proyecto personal.</p>
+<p><a id="concepto-1"></a></p>
+<h3>1.1. Semáforo y capacidad</h3>
+<p>Semaphore administra permisos. acquire espera un permiso y release lo devuelve. Con dos permisos, hasta dos operaciones pueden entrar simultáneamente a la región controlada. Un semáforo limita capacidad, pero no identifica por sí mismo qué recurso concreto corresponde a cada permiso.</p>
+<p>Libera únicamente permisos realmente adquiridos. Si acquire lanza InterruptedException antes de adquirir, no debes ejecutar un release incondicional que aumente la capacidad. Mantén la liberación en finally dentro del bloque posterior a la adquisición exitosa. Para conexiones reales, un pool suele gestionar tanto capacidad como objetos disponibles.</p>
+<p><a id="concepto-2"></a></p>
+<h3>1.2. Barrera reutilizable y señal de finalización</h3>
+<p>CyclicBarrier reúne un número fijo de participantes al final de una fase. Cuando todos llegan, pueden continuar y la barrera se reutiliza. CountDownLatch comienza con un contador que solo disminuye y permite a otros esperar que llegue a cero. No se reinicia.</p>
+<p>Una barrera puede romperse si un participante falla o se interrumpe. Los demás reciben BrokenBarrierException. No programes una barrera para cuatro tareas en un pool de dos hilos si las dos primeras esperan antes de que las otras puedan arrancar: no habrá suficientes participantes activos. El diseño debe relacionar número de participantes, capacidad del ejecutor y política de fallos.</p>
+<p><a id="concepto-3"></a></p>
+<h3>1.3. Variables atómicas y operaciones compuestas</h3>
+<p>AtomicInteger ofrece incrementos, comparaciones e intercambios atómicos sobre una variable. compareAndSet actualiza únicamente si el valor actual coincide con el esperado. Las funciones usadas en updateAndGet pueden evaluarse más de una vez, así que no deben tener efectos externos como enviar mensajes.</p>
+<p>Dos campos atómicos no crean una transacción entre ambos. Si una regla requiere actualizar saldo y contador juntos, hace falta otro diseño. LongAdder puede reducir contención en estadísticas, pero su suma no es una instantánea atómica para decisiones de control durante actualizaciones concurrentes. Elige según el contrato que necesitas preservar.</p>
+<p><a id="concepto-4"></a></p>
+<h3>1.4. Coordinación combinada</h3>
+<p>La demostración espera que cuatro tareas estén listas mediante una barrera y luego limita a dos el procesamiento con un semáforo. Un contador atómico registra terminaciones. La barrera se encuentra antes de adquirir el permiso, evitando que tareas retengan los únicos permisos mientras esperan participantes que no pueden entrar.</p>
+<p>Combinar herramientas exige analizar el orden de las esperas. Cada mecanismo debe tener una sola responsabilidad legible. Registra errores y finalización por tarea. Una métrica de completadas no debe incluir tareas canceladas ni fallidas.</p>
+<h3>Mapa de conceptos</h3>
+<p><img src="assets/guia-visual.svg" alt="Resumen visual"></p>
+<hr>
+<p><a id="demostracion"></a></p>
+<h2>2. Demostración guiada</h2>
+<h3>2.1. Problema y contrato</h3>
+<p>No todas las coordinaciones consisten en bloquear un objeto. CampusMonitor puede limitar conexiones simultáneas, esperar una fase de calibración y contar lecturas completadas con mecanismos distintos.</p>
+<p>La implementación siguiente es una demostración resuelta. La PC de la sección 3 requiere desarrollar una ampliación propia sobre CampusMonitor.</p>
+<p><strong>Archivo completo:</strong> <a href="ejemplos/CoordinacionDemo.java">CoordinacionDemo.java</a>.</p>
+<pre><code class="language-java">package edu.ups.pap.u03;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+public class CoordinacionDemo {
+    public static void main(String[] args) throws InterruptedException {
+        CyclicBarrier listas = new CyclicBarrier(4);
+        Semaphore capacidad = new Semaphore(2);
+        AtomicInteger completas = new AtomicInteger();
+        Thread[] tareas = new Thread[4];
+        for (int i=0;i&lt;tareas.length;i++) {
+            tareas[i] = new Thread(() -&gt; {
+                try {
+                    listas.await();
+                    capacidad.acquire();
+                    try { Thread.sleep(20); completas.incrementAndGet(); }
+                    finally { capacidad.release(); }
+                } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                catch (BrokenBarrierException e) { System.err.println(&quot;Fase cancelada&quot;); }
+            });
+            tareas[i].start();
+        }
+        for (Thread t : tareas) t.join();
+        System.out.println(&quot;Completas: &quot; + completas.get());
+        System.out.println(&quot;Permisos: &quot; + capacidad.availablePermits());
+    }
+}
+</code></pre>
+<h3>2.2. Ejecución</h3>
+<p>Desde la raíz de este repositorio, con JDK 25:</p>
+<pre><code class="language-bash">java 03/3.3-sincronizacion/02-barreras-semaforos-atomicas/ejemplos/CoordinacionDemo.java
+</code></pre>
+<p>Con el proyecto Gradle de demostraciones:</p>
+<pre><code class="language-bash">cd demostraciones
+./gradlew runDemo -Pdemo=3.3b
+</code></pre>
+<p>En Windows usa <code>gradlew.bat</code>. Ejecuta cada demostración desde una terminal nueva o vuelve a la raíz antes de cambiar de contenido.</p>
+<h3>2.3. Resultado y lectura de la ejecución</h3>
+<pre><code class="language-text">Completas: 4
+Permisos: 2
+</code></pre>
+<ol>
+<li>Identifica los datos iniciales y las precondiciones que la demostración valida.</li>
+<li>Sigue las llamadas desde <code>main</code> o <code>loop</code> y relaciona las operaciones con los conceptos de la sección 1.</li>
+<li>Contrasta el resultado con la salida esperada del ejemplo. Si el orden es concurrente, compara la invariante y no el orden de impresión.</li>
+<li>Cambia un dato del ejemplo y predice el resultado antes de ejecutarlo. Registra cualquier diferencia y su causa.</li>
+</ol>
+<hr>
+<p><a id="pc"></a></p>
+<h2>3. PC3.3b · Práctica de clase</h2>
+<h3>3.1. Ampliación del proyecto</h3>
+<p>Esta actividad se resuelve en tu repositorio <code>icc-pap-campusmonitor-apellido</code>. Mantén la funcionalidad anterior. No reemplaces tu solución con los archivos de demostración del material.</p>
+<ol>
+<li>Limita a dos las validaciones externas simuladas simultáneas de CampusMonitor utilizando Semaphore.</li>
+<li>Usa CountDownLatch para esperar la finalización de un lote de seis tareas, incluyendo las que fallan. Lleva contadores separados de completadas y fallidas.</li>
+<li>Documenta por qué una barrera requiere suficientes participantes activos y prueba cancelación antes de adquirir un permiso.</li>
+</ol>
+<h3>3.2. Comprobación y evidencia</h3>
+<p>Prueba los casos de esta sección y registra entradas, salida real y explicación. Incluye una ejecución normal y un caso de error. La evidencia debe permitir repetir el resultado desde el commit entregado.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Caso que debes revisar</th>
+<th>Comportamiento requerido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>6 tareas, capacidad 2</td>
+<td>Nunca más de 2 dentro de la región</td>
+</tr>
+<tr>
+<td>Fallo de una tarea</td>
+<td>Latch liberado en finally</td>
+</tr>
+<tr>
+<td>Interrupción durante acquire</td>
+<td>No aumenta el total de permisos</td>
+</tr>
+</tbody></table></div>
+<p>En <code>evidencias/PC3.3b.md</code> agrega: cambio realizado, archivos principales, comandos de ejecución, tabla de pruebas y enlace al commit final. No añadas una rúbrica a esta PC.</p>
+<h3>3.3. Commits de la actividad</h3>
+<pre><code class="language-bash">git status
+git add src evidencias
+git commit -m &quot;feat(pc3.3b): barreras-semaforos-y-variables-atomicas&quot;
+git push
+git log -1 --format=%H
+</code></pre>
+<p>Ajusta las rutas de <code>git add</code> a los archivos que realmente creaste. Incluye también configuración o SQL si cambiaste esos archivos. El último comando muestra el hash real que debes enlazar en tu evidencia.</p>
+<h3>Lo esencial</h3>
+<ul>
+<li>Semaphore limita la capacidad concurrente.</li>
+<li>CyclicBarrier coordina fases; CountDownLatch señala finalización.</li>
+<li>AtomicInteger no crea transacciones entre campos.</li>
+<li>Cada mecanismo protege una condición concreta del sistema.</li>
+</ul>
+<h2>Referencias técnicas</h2>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/package-summary.html">Concurrencia, Java 25</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/Thread.html">Thread</a></li>
+<li><a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.desktop/javax/swing/SwingWorker.html">SwingWorker</a></li>
+</ul>
+<nav class="article-nav" aria-label="Recursos del contenido"><a href="../../../index.html" target="_top">Índice del curso</a><a href="material.md" download>Descargar MD</a><a href="presentacion.pptx" download>Descargar PPTX</a><a href="../01-monitores-locks/index.html">Anterior</a><a href="../../3.4-productores-consumidores/index.html">Siguiente</a></nav></main></body></html>

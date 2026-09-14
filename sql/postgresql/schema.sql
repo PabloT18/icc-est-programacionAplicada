@@ -1,0 +1,26 @@
+BEGIN;
+CREATE TABLE IF NOT EXISTS sensor (
+ id VARCHAR(8) PRIMARY KEY,
+ ubicacion VARCHAR(80) NOT NULL CHECK (length(trim(ubicacion))>0),
+ magnitud VARCHAR(20) NOT NULL,
+ unidad VARCHAR(20) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sesion (
+ id UUID PRIMARY KEY,
+ inicio TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ fin TIMESTAMPTZ,
+ CHECK (fin IS NULL OR fin >= inicio)
+);
+CREATE TABLE IF NOT EXISTS lectura (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ sesion_id UUID NOT NULL REFERENCES sesion(id),
+ sensor_id VARCHAR(8) NOT NULL REFERENCES sensor(id),
+ secuencia BIGINT NOT NULL CHECK (secuencia BETWEEN 0 AND 4294967295),
+ recibido TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ raw INTEGER,
+ valor DOUBLE PRECISION NOT NULL,
+ unidad VARCHAR(20) NOT NULL,
+ UNIQUE(sesion_id,sensor_id,secuencia)
+);
+CREATE INDEX IF NOT EXISTS lectura_sensor_instante ON lectura(sensor_id,recibido,id);
+COMMIT;
